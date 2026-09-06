@@ -28,8 +28,9 @@ Was den Rahmen setzt:
   ([ADR 0052](0052-dashboard-als-statischer-export.md)); seine Daten kommen
   aus elf lesenden Endpunkten ([ADR 0053](0053-lese-api-kein-lauf-ueber-http.md)),
   deren Antworten sich als Dateien ablegen lassen. Der Chart-Payload einer
-  Aktie über fünf Jahre ist gemessen rund 350 KB roh, der Vollexport aller
-  Ansichten rund 75 MB roh und 17 MB komprimiert.
+  Aktie ist gemessen 141 Byte je Kerze, hochgerechnet auf fünf Jahre rund
+  350 KB roh; der Vollexport aller Ansichten liegt geschätzt bei rund 75 MB
+  roh und 17 MB komprimiert.
 - **Der Server spricht bereits ausgehend mit vier Diensten** (Finnhub,
   EDGAR, Anthropic, Telegram), mit Tokens aus `ATA_`-Variablen und
   Fehlerisolation am Laufende ([ADR 0024](0024-benachrichtigungskanal-telegram.md)).
@@ -56,8 +57,10 @@ Abschnitte 6 und 7.
 
 1. **Der Server bleibt unerreichbar.** Kein eingehender Port, kein Agent,
    kein Tunnel. Die einzige neue Verbindung geht vom Server nach außen:
-   ein HTTPS-Upload mit einem Token, das beim Anbieter **auf genau diese
-   Seite und auf Schreiben** beschränkt ist.
+   ein HTTPS-Upload mit einem Token, das beim Anbieter **auf Schreiben**
+   und — wo der Anbieter Projekt-Granularität bietet — **auf genau diese
+   Seite** beschränkt ist; bietet er sie nicht, gehört die Seite in ein
+   eigenes Konto nur für diesen Zweck.
 2. **Nach jedem Lauf verlässt ein Snapshot den Server.** Ein Exportschritt
    am Ende von `RunAnalysisUseCase.execute()` — Port `DashboardPublisher`
    neben `Notifier`, Adapter in der Infrastruktur, **dieselbe
@@ -70,8 +73,8 @@ Abschnitte 6 und 7.
 3. **Der Snapshot ist ein Datenbaum aus den Antworten der API**, erzeugt
    von denselben Anwendungsfällen und Antwortschemata — keine zweite
    Rechnung, kein zweiter Zuschnitt —, mit einem **Manifest** (Zeitpunkt,
-   Lauf-ID, Versionen, Verfahren). Die Oberfläche zeigt den Stand aus dem
-   Manifest an jeder Ansicht: Ein alter Stand muss alt aussehen.
+   Lauf-ID, Export-Kennung, Versionen). Die Oberfläche zeigt den Stand aus
+   dem Manifest an jeder Ansicht: Ein alter Stand muss alt aussehen.
 4. **Die Oberfläche bekommt einen statischen Datenmodus.** Dasselbe
    Frontend, gebaut mit einer Umgebungsvariablen, holt seine Antworten aus
    dem Datenbaum statt von der API; Paginierung und Filter der Läufe
@@ -82,25 +85,35 @@ Abschnitte 6 und 7.
 5. **Außerhalb liegt eine statische Seite hinter der Anmeldung des
    Anbieters** (beispielhaft: Cloudflare Pages mit Access, Azure Static
    Web Apps). Die Zugriffsregel deckt den **ganzen Hostnamen** ab —
-   jede Datei, auch Vorschau- und Zweigadressen —, erlaubt **genau einen
-   Nutzer** und verlangt MFA über ein Identitätsanbieter-Konto mit
+   jede Datei, auch Vorschau-, Zweig- und ältere Deployment-Adressen, auch
+   die Standard-Subdomain neben einem eigenen Namen —, erlaubt **genau
+   einen Nutzer** und verlangt MFA über ein Identitätsanbieter-Konto mit
    Authenticator-App oder Passkey; ein E-Mail-Einmalcode ist nur Rückfall.
    Sitzung kurz (Vorschlag 24 Stunden), Cookies `Secure`, `HttpOnly`,
-   `SameSite`, `noindex`, nichtssagende Namen. Kein eigenes
-   Anmeldeformular, kein eigener Sitzungscode; `ATA_SESSION_SECRET` bleibt
-   reserviert.
+   `SameSite`, `noindex`, nichtssagende Namen. Bevorzugt wird ein
+   Anbieter, dessen Zugriffsregel **außerhalb des Deployments** liegt —
+   sonst hebt ein Token-Dieb sie mit dem nächsten Upload auf — und der
+   **alte Deployments löschen** lässt, weil seine Historie sonst jeden
+   Snapshot aufbewahrt. Kein eigenes Anmeldeformular, kein eigener
+   Sitzungscode; `ATA_SESSION_SECRET` bleibt reserviert.
 6. **Zero-Knowledge ist die Zielstufe, nicht ein Extra.** In Stufe 2 wird
    der Datenbaum auf dem Server verschlüsselt — Schlüssel aus einer
-   Passphrase abgeleitet (PBKDF2-SHA256, hohe Iterationszahl, Salt im
-   Manifest), je Datei AES-256-GCM mit zufälliger Nonce und dem
-   **Dateipfad als Zusatzdaten**, komprimiert vor dem Verschlüsseln — und
-   im Browser mit WebCrypto entschlüsselt. Der Anbieter sieht Chiffrat;
-   gefälschte oder vertauschte Datendateien werden verworfen; die
+   Passphrase abgeleitet (PBKDF2-HMAC-SHA256, mindestens 600.000
+   Iterationen, zufälliges Salt je Export in einem kleinen Klartextkopf,
+   dessen Mindestwerte der Browser erzwingt), je Datei AES-256-GCM mit
+   zufälliger Nonce und **Export-Kennung und Dateipfad als Zusatzdaten**,
+   komprimiert und auf Größenklassen aufgefüllt vor dem Verschlüsseln,
+   **opake Dateinamen**, das Manifest selbst verschlüsselt — und im Browser
+   mit WebCrypto entschlüsselt, in einem **eigenen Build, der Klartext gar
+   nicht annimmt**: Das Verfahren ist Eigenschaft des Builds, nicht des
+   Manifests, damit niemand mit Schreibzugriff auf Klartext zurückschalten
+   kann. Der Anbieter sieht Chiffrat, Dateizahl und Größenklassen;
+   gefälschte, vertauschte und veraltete Datendateien werden verworfen; die
    Passphrase im Passwortmanager ist die „einfache Anmeldung", die
    Kantenanmeldung bleibt als MFA davor. Stufe 1 wird so gebaut, dass
-   Stufe 2 eine Schreib- und eine Ladefunktion austauscht und ein
-   Manifestfeld setzt. Die Verschlüsselung braucht eine neue
-   Abhängigkeit (`cryptography`) und eine unabhängige Review des
+   Stufe 2 eine Schreib- und eine Ladefunktion austauscht und den Build
+   umschaltet. Die Verschlüsselung braucht eine neue Abhängigkeit
+   (`cryptography`), Testvektoren und eine unabhängige Review des
    Kryptocodes. **Ob Stufe 2 unmittelbar folgt, ist Entscheidungspunkt E1
    des Spike-Berichts; empfohlen ist unmittelbar.**
 7. **Außerhalb gibt es keine API, keine Datenbank, keinen Schreibpfad und
@@ -113,16 +126,20 @@ Abschnitte 6 und 7.
    jährlich und bei Verdacht. Hostname, Projektname und Konto stehen in
    keinem Dokument und keinem Workflow des Repositories.
 9. **Der Notausschalter** hat fünf Ebenen (Spike-Bericht, Abschnitt 12):
-   Seite oder Regel beim Anbieter abschalten, Token widerrufen,
-   Exportschritt abschalten, Passphrase wechseln, Sitzungen beenden. Er
-   hält den Tageslauf nicht an und löscht nichts auf dem Server.
+   Seite oder Regel beim Anbieter abschalten (samt alter Deployments),
+   Token widerrufen, Exportschritt abschalten, Passphrase wechseln und alte
+   Fassungen löschen, Sitzungen beenden. Er hält den Tageslauf nicht an und
+   löscht nichts auf dem Server.
 10. **Erst ein Proof of Concept, dann der Betrieb.** Der PoC läuft mit
     synthetischen Daten (erzeugte Golden-Master-Fälle, Fixture-Anbieter,
     eigene Datenbank), einem Wegwerf-Skript statt Produktcode, einem
     schreibbeschränkten Token und vollständigem Rückbau; er weist nach,
-    dass ohne Anmeldung keine Datei erreichbar ist, dass das Token nichts
-    anderes kann und dass der Server unverändert bleibt (Spike-Bericht,
-    Abschnitt 11). Dieses ADR wird erst nach bestandenem PoC angenommen.
+    dass ohne Anmeldung keine Datei erreichbar ist — auch keine ältere
+    Fassung —, dass das Token nichts anderes kann, dass in Stufe 2 ein auf
+    Klartext gesetzter Kopf, eine veraltete Datei und eine vertauschte
+    Datei verworfen werden, und dass der Server unverändert bleibt
+    (Spike-Bericht, Abschnitt 11). Dieses ADR wird erst nach bestandenem
+    PoC angenommen.
 11. **Was nicht entschieden wird:** die Anbieterwahl (PoC, mit
     Nutzungsbedingungen); ein Link in der Telegram-Meldung (der Nachtrag
     zu [ADR 0040](0040-inhalt-der-ergebnismeldung.md) bindet die Frage an
@@ -153,14 +170,21 @@ allein legt Berichte mit Modelltext, Optionsvorschläge, Kursreihen und
 damit die Watchlist im Klartext zu einem Anbieter. Das ist die Lage, die
 ADR 0049 mit „solange nichts das eigene Netz verlässt" vermieden hat, und
 sie stellt Finnhubs L8 und das Deployment-Gate aus ADR 0022 neu. Stufe 2
-beantwortet beides technisch: Ein Anbieter, der nur Chiffrat hält, liest
-nichts. Und sie sichert die **Daten** gegen Fälschung — eine Datei, die
-nicht mit dem Schlüssel und unter ihrem Pfad verschlüsselt wurde, verwirft
-der Browser. Was sie nicht sichert, ist die **Oberfläche**: Wer den Host
-kontrolliert, kann die Seite ersetzen, die die Passphrase abfragt. Dagegen
-steht die Telegram-Meldung als unabhängige Gegenprobe (Symbole, Scores,
-Stufe — [ADR 0047](0047-scores-in-der-ergebnismeldung.md)) und das
-Deployment-Protokoll des Anbieters. Diese Grenze ist benannt, nicht
+verringert beides erheblich: Ein Anbieter, der Chiffrat hält, liest keine
+Inhalte — Dateizahl und Größenklassen bleiben ihm; ob das eine „Weitergabe"
+ist, bleibt die Einordnung des Inhabers (Spike-Bericht, O1). Und sie
+sichert die **Daten** gegen Fälschung, Vertauschung und Replay — eine
+Datei, die nicht mit dem Schlüssel, unter ihrem Pfad und für diesen Export
+verschlüsselt wurde, verwirft der Browser; das Manifest ist selbst
+verschlüsselt, und der Zero-Knowledge-Build nimmt Klartext nicht an. Was
+sie nicht sichert, ist die **Oberfläche**: Wer den Host kontrolliert, kann
+die Seite ersetzen, die die Passphrase abfragt. Dagegen
+steht die Telegram-Meldung als unabhängige Gegenprobe (Symbole,
+Signalzahl, Scores, Stufe, bester Put-Vorschlag —
+[ADR 0047](0047-scores-in-der-ergebnismeldung.md),
+[ADR 0055](0055-put-vorschlag-und-signalzahl-in-der-ergebnismeldung.md);
+Kursreihen und Berichtstext deckt sie nicht) und das Deployment-Protokoll
+des Anbieters. Diese Grenze ist benannt, nicht
 verschwiegen.
 
 **Warum die Anmeldung an der Kante trotz Zero-Knowledge bleibt:** Ohne sie
@@ -196,8 +220,10 @@ ADR 0024, aus demselben Grund.
   Anbieterwechsel ist ein Konto, ein Token und ein Vollexport — Stunden.
 - Ein Ausfall des Anbieters kostet die Anzeige, nicht den Tageslauf; die
   Telegram-Meldung bleibt.
-- Mit Stufe 2 sind Vertraulichkeit gegenüber dem Anbieter und Integrität
-  der Daten technisch gesichert, nicht vertraglich.
+- Mit Stufe 2 sind die Inhalte gegenüber dem Anbieter verschlossen und
+  die Daten gegen Fälschung, Vertauschung und Replay gesichert — Dateizahl
+  und Größenklassen bleiben sichtbar, die Oberfläche bleibt Vertrauenssache
+  des Hosts.
 
 **Negativ und offen**
 
@@ -211,10 +237,18 @@ ADR 0024, aus demselben Grund.
   in Stufe 2 Verschlüsselung auf beiden Seiten mit neuer Abhängigkeit und
   Review. Tage, nicht Stunden — und ein Prototyp im PoC, der nicht gemergt
   wird.
-- **Ein Upload-Werkzeug des Anbieters** auf dem Handelsrechner ist möglich
-  (Datenweg P2), aber ein Programm mehr; bevorzugt wird der Upload aus
-  Python (P1). Wird P2 gewählt, ist ADR 0052 Punkt 2 um „Node als
-  Auslieferungswerkzeug" zu ergänzen.
+- **Ein Upload-Werkzeug des Anbieters** auf dem Handelsrechner ist
+  wahrscheinlich (Datenweg DW2): Die Beispielanbieter kapseln den Upload
+  nach Kenntnisstand in Node-Werkzeuge. Dann bekommt ADR 0052 einen
+  Nachtrag zu Punkt 2 („Node auch als Auslieferungswerkzeug"). Der Upload
+  aus Python (DW1) bleibt der schmalere Weg, wo eine Schnittstelle ihn
+  trägt.
+- **Die Deployment-Historie des Anbieters ist eine Datenhalde.** Alte
+  Fassungen sind zu löschen; ein Anbieter ohne Löschmöglichkeit scheidet
+  aus. Ein Passphrase-Wechsel macht alte Chiffrate nicht unlesbar.
+- **Die Nummer 0059 ist auf einem Branch belegt.** Vor dem Merge dieses
+  ADR gehört ADR 0059 als „Vorgeschlagen, zurückgestellt" nach `dev`, damit
+  die Nummerierung lückenlos bleibt (ADR-README: fortlaufend).
 - **Der Export wächst** mit den Berichten; nur Neues wird hochgeladen, eine
   Archivgrenze ist eine spätere Entscheidung.
 - **Zwei Anmeldeschritte in Stufe 2** (Anbieter, dann Passphrase); der
@@ -222,7 +256,7 @@ ADR 0024, aus demselben Grund.
 - **Dokumentation, die nachzuziehen ist:** Doc 14 (neue Stufe K:
   Exportschritt, Anbieterkonsole, Notfallkarte), Doc 13, Doc 10 §3, §6.15,
   §13, §14, Doc 11 (der Datenbaum als zweiter Vertrag derselben
-  Antwortschemata), gegebenenfalls ADR 0052 Punkt 2, README.
+  Antwortschemata), gegebenenfalls ein Nachtrag zu ADR 0052 Punkt 2, README.
 
 **Was dieses ADR ablöst, sobald es angenommen ist:** die Aussage „keine
 Exposition, keine eigene Authentifizierung" aus ADR 0049 wird zu „der

@@ -46,12 +46,13 @@
 | **Annahme** | plausibel, aber nicht belegt; vor dem PoC zu bestätigen |
 | **Offen** | Information, die im Repository nicht steht; als Frage in Abschnitt 10 geführt |
 
-Kürzel: Annahmen **A1–A6**, Anforderungen **S1–S18** (Kontrollmaßnahmen
-der Aufgabenstellung), Vorgaben des Inhabers **I1–I5**, Rahmen **P1–P8**,
-Schutzgüter **SG1–SG7**, Bedrohungen **T1–T18**, Varianten **H0–H4** mit
-Datenweg **P** und Bauweise **B**, Restrisiken **R1–R10**, offene Fragen
-**O1–O12**, Entscheidungspunkte **E1–E7**, Abnahmekriterien **AK1–AK18**,
-Negativtests **N1–N14**, Notausschalter **K1–K5**.
+Kürzel: Annahmen **A1–A6**, Dokumentationsbefunde **D1–D5**, Anforderungen
+**S1–S18** (Kontrollmaßnahmen der Aufgabenstellung), Vorgaben des Inhabers
+**I1–I5**, Rahmen **P1–P8**, Schutzgüter **SG1–SG7**, Bedrohungen
+**T1–T22**, Varianten **H0–H4** mit Datenweg **DW1–DW4** und Bauweise
+**B1–B3**, Restrisiken **R1–R10**, offene Fragen **O1–O12**,
+Entscheidungspunkte **E1–E7**, Abnahmekriterien **AK1–AK18**, Negativtests
+**N1–N19**, Rückbau **RB1–RB8**, Notausschalter **K1–K5**.
 
 Produkte und Dienste werden **beispielhaft** genannt; die Anbieterwahl
 gehört in den PoC, zusammen mit der Prüfung der Nutzungsbedingungen.
@@ -69,8 +70,9 @@ bekommt keinen eingehenden Port, keinen Agenten, keinen Tunnel; was auf
 ihm läuft, ändert sich um einen Exportschritt, der wie die
 Telegram-Meldung isoliert ist und den Lauf nicht scheitern lassen kann.
 
-**Was das kostet:** Die Analyseergebnisse — Berichte mit Modelltext,
-Optionsvorschläge, Kursreihen aller rund 190 Aktien, damit die Watchlist —
+**Was das kostet:** Die Analyseergebnisse — Berichte mit Modelltext (heute
+vom Technical Agent; die Recherche läuft im Dauerbetrieb mit `none`,
+ADR 0051), Optionsvorschläge, Kursreihen aller rund 190 Aktien, damit die Watchlist —
 liegen dann bei einem Hosting-Anbieter. Finnhubs Einschränkung L8 und das
 Deployment-Gate aus ADR 0022 stellen sich damit anders als bisher: nicht
 als Frage nach fremden Lesern, sondern nach dem Anbieter als Dritten. Und
@@ -81,18 +83,22 @@ kontrolliert, kontrolliert, was der Nutzer sieht.
 
 - **Stufe 1 — statischer Export bei einem Anbieter mit Anmeldung an der
   Kante** (beispielhaft: Cloudflare Pages mit Access, Azure Static Web
-  Apps; MFA über E-Mail-Einmalcode oder ein Identitätsanbieter-Konto mit
-  Authenticator-App). Jedes Gerät mit Browser, keine Client-Software, nichts
+  Apps; MFA über ein Identitätsanbieter-Konto mit Authenticator-App oder
+  Passkey — ein E-Mail-Einmalcode ist nur ein Faktor und bleibt Rückfall).
+  Jedes Gerät mit Browser, keine Client-Software, nichts
   zu patchen, kostenlose Stufen vorhanden. Der Anbieter sieht die Daten im
   Klartext.
 - **Stufe 2 — Zero-Knowledge:** Der Export wird auf dem Server mit einer
   Passphrase verschlüsselt (AES-GCM, Schlüssel aus der Passphrase
-  abgeleitet, Dateipfad als Zusatzdaten); die Oberfläche entschlüsselt im
-  Browser. Der Anbieter sieht nur Chiffrat, gefälschte oder vertauschte
-  Datendateien werden vom Browser verworfen, und die Passphrase ist genau
-  die „einfache Anmeldung", die der Inhaber wollte — die Anmeldung an der
-  Kante bleibt als MFA davor. Damit ist die Lizenzfrage technisch statt
-  juristisch beantwortet.
+  abgeleitet, Export-Kennung und Dateipfad als Zusatzdaten, Manifest
+  ebenfalls verschlüsselt, opake Dateinamen); die Oberfläche entschlüsselt
+  im Browser — in einem Build, der Klartext gar nicht annimmt. Der Anbieter
+  sieht Chiffrat und Metadaten (Dateizahl, Größenklassen); gefälschte,
+  vertauschte oder veraltete Datendateien verwirft der Browser, und die
+  Passphrase ist genau die „einfache Anmeldung", die der Inhaber wollte —
+  die Anmeldung an der Kante bleibt als MFA davor. Das verringert das
+  Lizenzrisiko erheblich; ob verschlüsselte Ablage bei einem Anbieter eine
+  „Weitergabe" ist, bleibt eine Einordnung des Inhabers (O1).
 
 **Der zurückgestellte Overlay-Weg bleibt der sicherere Zugang zum Server
 selbst** (kein öffentlicher Endpunkt, Ende-zu-Ende, gerätegebunden) — aber
@@ -100,10 +106,12 @@ er verlangt Client-Software auf jedem Gerät, und genau das will der Inhaber
 nicht. Beide Wege schließen sich nicht aus; dieser hier braucht den anderen
 nicht.
 
-**Gemessen:** Der Chart einer Aktie mit voller Fünfjahresreihe ist rund
-350 KB roh und 80 KB komprimiert; der Vollexport aller Ansichten liegt bei
-rund 75 MB roh und 17 MB komprimiert, davon ändern sich täglich die Charts.
-Das ist für einen Upload nach jedem Lauf unproblematisch.
+**Gemessen und hochgerechnet:** Der Chart einer Aktie ist gemessen 141 Byte
+je Kerze (830 Kerzen: 114 KB roh, 26 KB komprimiert), hochgerechnet auf
+fünf Jahre rund 350 KB roh und 80 KB komprimiert. Der Vollexport aller
+Ansichten liegt geschätzt bei rund 75 MB roh und 17 MB komprimiert, davon
+ändern sich täglich die Charts. Das ist für einen Upload nach jedem Lauf
+unproblematisch.
 
 **Nicht getan:** kein Code, keine Infrastruktur, kein Konto, kein Dienst.
 
@@ -116,7 +124,7 @@ Das ist für einen Upload nach jedem Lauf unproblematisch.
 | Befund | Fundstelle |
 |---|---|
 | Das Dashboard ist ein statischer Export (Next.js 15, `output: 'export'`, `trailingSlash: true`), den die FastAPI-Anwendung unter `/` mit ausliefert; ein Prozess, ein Port, gleiche Herkunft | `frontend/next.config.ts`, `presentation/api/app.py`, [ADR 0052](../adr/0052-dashboard-als-statischer-export.md) |
-| Die Oberfläche kennt die API an **genau einer Stelle**: ein Modul mit elf Abruffunktionen und einer gemeinsamen `holen()`-Funktion, relative Pfade unter `/api/v1`, Paginierung über `limit`/`offset`/`status`, Backtest wahlweise je `measurement_id` | `frontend/src/lib/api.ts` |
+| Die Oberfläche kennt die API an **genau einer Stelle**: ein Modul mit neun Abruffunktionen (für die neun fachlichen Endpunkte; Health und Readiness ruft die Oberfläche nicht ab) und einer gemeinsamen `holen()`-Funktion, relative Pfade unter `/api/v1`, Paginierung über `limit`/`offset`/`status`, Backtest wahlweise je `measurement_id` | `frontend/src/lib/api.ts` |
 | Keine externen Ressourcen im Frontend, keine Geschäftslogik, kein `dangerouslySetInnerHTML` | `frontend/src/` |
 | Elf lesende Endpunkte: Läufe (paginiert), Laufdetail, Berichte je Lauf, Bericht (das gespeicherte Dokument unverändert), Berichte je Aktie (paginiert), Backtest je Aktie (Signal und Optionen, mit Einzeltrades), Chart je Aktie (volle Reihe), Messungen des Optionsbacktests (Liste und Detail), Health, Readiness | Doc 11, `presentation/api/v1/*.py` |
 | Der Chart-Payload entsteht aus **einer** Funktion, die nur Domain-Funktionen benutzt und dieselbe ist wie für `cli chart`; der Export ist also außerhalb der API reproduzierbar | `presentation/validation_chart.py`, `build_chart_payload` |
@@ -129,7 +137,8 @@ Das ist für einen Upload nach jedem Lauf unproblematisch.
 | Geheimnisse ausschließlich über `ATA_`-Umgebungsvariablen, Schwärzung an der Log-Senke (im CLI; der Webprozess konfiguriert kein Logging — Befund des ersten Spikes) | [ADR 0005](../adr/0005-konfiguration-und-secrets.md), [ADR 0044](../adr/0044-geheimnisse-an-der-log-senke-schwaerzen.md) |
 | Keine Kryptographie-Bibliothek und kein S3-Client unter den Abhängigkeiten; `hashlib` (PBKDF2) ist Standardbibliothek | `backend/pyproject.toml`, `requirements.lock.txt` |
 | Das Repository ist öffentlich | [ADR 0031](../adr/0031-merge-schutz-aktiv.md) |
-| Die Telegram-Meldung enthält Symbole, Signaltypen, beide Scores und die Empfehlungsstufe — **keinen Link**, weil das Dashboard bisher nicht erreichbar war; der Nachtrag zu ADR 0040 bindet die Link-Frage an die Neubewertung der Exposition | [ADR 0040](../adr/0040-inhalt-der-ergebnismeldung.md), [ADR 0047](../adr/0047-scores-in-der-ergebnismeldung.md) |
+| Die Telegram-Meldung enthält Symbole, Signalzahl, beide Scores, die Empfehlungsstufe und den besten Put-Vorschlag — **keinen Link**, weil das Dashboard bisher nicht erreichbar war; der Nachtrag zu ADR 0040 bindet die Link-Frage an die Neubewertung der Exposition | [ADR 0040](../adr/0040-inhalt-der-ergebnismeldung.md), [ADR 0047](../adr/0047-scores-in-der-ergebnismeldung.md), [ADR 0055](../adr/0055-put-vorschlag-und-signalzahl-in-der-ergebnismeldung.md) |
+| Im Dauerbetrieb läuft die Recherche mit `none`; der Modelltext in den Berichten stammt heute vom Technical Agent. Das Deployment-Gate aus ADR 0022 wird erst scharf, wenn die Recherche wieder eingeschaltet wird | [ADR 0051](../adr/0051-research-im-dauerbetrieb-abgeschaltet.md), Doc 14 Betriebszustand |
 | Die Watchlist umfasst drei Dateien mit zusammen rund 210 Einträgen, rund 190 verschiedene Symbole | `watchlists/*.txt`, ADR 0045 (191 Titel) |
 | Der Server ist der Handelsrechner (TWS mit Orderrecht der Trade Automation Toolbox); nichts daran ändert sich durch diesen Spike | Doc 14 Stufe D, erster Spike |
 
@@ -181,7 +190,7 @@ der tägliche Upload liegt damit bei rund 15 MB komprimiert — bei einem
 |---|---|---|
 | D1 | Doc 10 §3 nennt den externen Webzugriff weiterhin „(F12, unentschieden)" | Doc 10 §3 |
 | D2 | Doc 11 sagt, `/docs` und `/openapi.json` seien „nur im eigenen Netz erreichbar" — für die LAN-Auslieferung bleibt das richtig; außerhalb gibt es keine API, also auch keine Dokumentation | Doc 11 |
-| D3 | ADR 0052 Punkt 2: „Node ist Bauwerkzeug, nicht Laufzeit" — ein Upload-Werkzeug auf Node-Basis wäre eine Erweiterung dieser Aussage (Bau- **und** Auslieferungswerkzeug), keine Laufzeit | ADR 0052 |
+| D3 | ADR 0052 Punkt 2: „Node ist Bauwerkzeug, nicht Laufzeit" — ein Upload-Werkzeug auf Node-Basis wäre ein Nachtrag zu dieser Aussage (Bau- **und** Auslieferungswerkzeug), keine Laufzeit — ADRs werden nicht geändert, sie bekommen Nachträge | ADR 0052 |
 | D4 | Doc 02 §2.12 verlangt einen Link zum Dashboard in der Benachrichtigung; ADR 0040 verneint ihn mangels Erreichbarkeit — mit einem gehosteten Dashboard entfällt der Grund, nicht die Abwägung | Doc 02, ADR 0040 |
 | D5 | Doc 14 Stufe J beschreibt die LAN-Auslieferung; die Auslieferung nach außen bräuchte eine eigene Stufe (Export, Upload, Anbieterkonsole, Notfallkarte) | Doc 14 |
 
@@ -205,16 +214,16 @@ der tägliche Upload liegt damit bei rund 15 MB komprimiert — bei einem
 |---|---|---|
 | S1 | Kein direkter öffentlicher Zugriff auf den Python-Dienst | Der Dienst bleibt im LAN; außerhalb gibt es keinen Python-Prozess (Kriterium 1) |
 | S2 | Keine Portweiterleitung auf das Frontend | Keine — der Server lädt nur hoch (Kriterium 3) |
-| S3 | TLS für alle externen Verbindungen | Upload über HTTPS; Auslieferung über HTTPS des Anbieters (Kriterium 8) |
+| S3 | TLS für alle externen Verbindungen | Upload über HTTPS; Auslieferung über HTTPS des Anbieters (Kriterium 7) |
 | S4 | Phishing-resistente MFA, soweit möglich | Anmeldung an der Kante mit Authenticator-App oder Passkey; E-Mail-Einmalcode ist phishbar und wird als Rückfall benannt (Kriterium 4) |
 | S5 | Individuelle Konten | Ein Konto, ein Nutzer (P1) |
 | S6 | Explizite Zugriffskontrolle | Zugriffsregel des Anbieters auf den ganzen Hostnamen einschließlich der Datendateien (8.3) |
 | S7 | Sichere Session- und Cookie-Konfiguration | Sitzung des Anbieters: `Secure`, `HttpOnly`, `SameSite`, Laufzeit — im PoC zu prüfen (AK6) |
-| S8 | Ratenbegrenzung, Schutz gegen Automaten | Anbieter an der Kante; kein eigenes Anmeldeformular (Kriterium 2) |
+| S8 | Ratenbegrenzung, Schutz gegen Automaten | Anbieter an der Kante; kein eigenes Anmeldeformular (Kriterium 2 und 4) |
 | S9 | Minimale Windows-Firewall-Regeln | Keine neue Regel; nur ausgehendes HTTPS |
 | S10 | Dienstkonto mit minimalen Rechten | Der Export läuft im Lauf; das Token ist schreibbeschränkt (8.4) |
 | S11 | Sichere Ablage und Rotation von Geheimnissen | Token und Passphrase als `ATA_`-Variablen, Schwärzung, Rotation (8.4) |
-| S12 | Updates und Patch-Prozess | Beim Anbieter nichts; auf dem Server der Exporter im normalen Turnus (Kriterium 11) |
+| S12 | Updates und Patch-Prozess | Beim Anbieter nichts; auf dem Server der Exporter im normalen Turnus (Kriterium 10) |
 | S13 | Revisionsfähige, datensparsame Protokollierung | Anmelde- und Zugriffsprotokoll des Anbieters; Exportprotokoll auf dem Server (8.6) |
 | S14 | Alarmierung | Anbieteralarme; fehlgeschlagener Upload über Telegram (8.6) |
 | S15 | Notausschalter | Abschnitt 12 |
@@ -329,29 +338,38 @@ außen.
 |---|---|---|---|---|---|
 | T1 | Unbefugter Lesezugriff über die Anmeldung | SG2 | Schwaches Passwort, geratener Einmalcode, Credential Stuffing gegen das Anbieterkonto | mittel | MFA mit Authenticator-App oder Passkey (8.3); Ratenbegrenzung des Anbieters; Sitzungslaufzeit; Stufe 2: ohne Passphrase nur Chiffrat |
 | T2 | Phishing der Anmeldung | SG4, SG2 | Nachgebaute Anmeldeseite; E-Mail-Einmalcode weitergeleitet | mittel | Passkey beim Identitätsanbieter, wo möglich (S4); Einmalcode nur als Rückfall; Stufe 2 begrenzt den Schaden auf Chiffrat |
-| T3 | **Fehlkonfiguration: Datendateien ohne Anmeldung erreichbar** | SG2 | Zugriffsregel deckt nur `/`, nicht `/data/*`; öffentlicher Bucket; „Preview"-Adressen ohne Schutz | **hoch bei Einrichtung** | Regel auf den ganzen Hostnamen (8.3); Negativtests N1–N4; regelmäßige Prüfung von außen (13) |
-| T4 | Der Anbieter liest die Daten | SG2 | Klartext auf seinen Systemen; Zugriffsprotokolle mit Pfaden (Symbole) | Stufe 1: gegeben; Lizenzfrage O1 | Stufe 2: Zero-Knowledge (8.2); datensparsame Pfade |
+| T3 | **Fehlkonfiguration: Datendateien ohne Anmeldung erreichbar** | SG2 | Zugriffsregel deckt nur `/`, nicht `/data/*`; öffentlicher Bucket; Vorschau-, Zweig- und **ältere Deployment-Adressen** ohne Schutz; Standard-Subdomain des Anbieters neben dem eigenen Namen ohne eigene Regel | **hoch bei Einrichtung** | Regel auf den ganzen Hostnamen (8.3); Negativtests N1–N4; regelmäßige Prüfung von außen (13) |
+| T4 | Der Anbieter liest die Daten | SG2 | Klartext auf seinen Systemen; Zugriffsprotokolle mit Pfaden (Symbole) | Stufe 1: gegeben; Lizenzfrage O1 | Stufe 2: Zero-Knowledge mit opaken Dateinamen (H3); Dateizahl und Größenklassen bleiben ein Restleck (R1) |
 | T5 | Vorfall beim Anbieter | SG2, SG3 | Datenabfluss aus seinem Speicher; Manipulation seiner Auslieferung | niedrig | Stufe 2 (Chiffrat, Integritätsprüfung der Daten); Oberfläche bleibt verwundbar (R2) |
-| T6 | **Diebstahl des Upload-Tokens** | SG3, SG5 | Aus `.env`, aus einem Protokoll, aus einer Sicherung; dann Ersetzen der Seite durch eine gefälschte | niedrig, Auswirkung hoch | Token schreibbeschränkt auf genau diese Seite (8.4); Schwärzung; Rotation; Anbieter-Protokoll der Deployments; Stufe 2: Daten ohne Passphrase nicht fälschbar |
-| T7 | **Manipulation der Anzeige** über Host, Token oder Build | SG3 | Gefälschte Datendateien oder eine veränderte Oberfläche | niedrig, Auswirkung hoch | Stufe 2: AES-GCM mit Dateipfad als Zusatzdaten — gefälschte oder vertauschte Daten werden verworfen; Oberfläche aus dem Lock-File gebaut; **Telegram-Meldung als unabhängige Gegenprobe** (Symbole, Scores, Stufe) — vorhanden (ADR 0047) |
+| T6 | **Diebstahl des Upload-Tokens** | SG3, SG5 | Aus `.env`, aus einem Protokoll, aus einer Sicherung; dann Ersetzen der Seite durch eine gefälschte oder Zurückschalten auf ein altes Deployment (T20) | niedrig, Auswirkung hoch | Token schreibbeschränkt auf genau diese Seite (8.4); Schwärzung; Rotation; Anbieter-Protokoll der Deployments; Stufe 2: Daten ohne Passphrase nicht fälschbar |
+| T7 | **Manipulation der Anzeige** über Host, Token oder Build | SG3 | Gefälschte Datendateien oder eine veränderte Oberfläche | niedrig, Auswirkung hoch | Stufe 2: AES-GCM mit Export-Kennung und Dateipfad als Zusatzdaten, verschlüsseltes Manifest, Build ohne Klartext-Annahme — gefälschte, vertauschte, veraltete Daten und ein Downgrade werden verworfen (T20, T21); Oberfläche aus dem Lock-File gebaut; **Telegram-Meldung als unabhängige Gegenprobe** — sie deckt Symbole, Signalzahl, Scores, Stufe und den besten Put-Vorschlag, nicht Kursreihen und Berichtstext (ADR 0047, ADR 0055) |
 | T8 | Lieferkette des Builds und des Upload-Werkzeugs | SG3, SG1 | npm-Paket im Build; Upload-Werkzeug auf dem Handelsrechner | niedrig | `npm ci` aus Lock-File, `audit.yml`; Upload bevorzugt über `httpx` ohne neues Werkzeug (8.4); wenn Werkzeug, dann signiertes Paket |
-| T9 | Auffindbarkeit der Seite | SG2 | Transparenzprotokolle des Zertifikats, Anbieter-Subdomain aus dem Projektnamen, Workflow-Datei im öffentlichen Repository, Suchmaschinen | mittel | Nichtssagende Namen; Projektnamen nur als Geheimnis/Variable in der CI; `noindex`, `robots.txt`; Anmeldung schützt ohnehin alles (8.3) |
+| T9 | Auffindbarkeit der Seite | SG2 | Transparenzprotokolle des Zertifikats, Anbieter-Subdomain aus dem Projektnamen, Anmeldedomain des Anbieters, Workflow-Datei im öffentlichen Repository, Suchmaschinen | mittel | Nichtssagende Namen; Projektnamen nur als Geheimnis/Variable in der CI; `noindex`, `robots.txt`; Anmeldung schützt ohnehin alles (8.3) |
 | T10 | **Stiller Upload-Fehler: alte Daten sehen aus wie neue** | SG7 | Token abgelaufen, Anbieter nicht erreichbar, Export bricht ab | mittel | Manifest mit Zeitpunkt und Lauf-ID, sichtbar in der Oberfläche; Telegram-Meldung bei fehlgeschlagenem Upload; Rückgabewert des Exportschritts (8.6) |
 | T11 | Exportschritt hält den Lauf auf oder lässt ihn scheitern | SG6 | Ausnahme im Export, Timeout beim Upload | mittel | Isolation wie `_notify` (8.4); Upload nach dem Speichern der Ergebnisse; Timeouts; Rückgabewert getrennt vom Laufergebnis |
 | T12 | Sitzung auf einem entwendeten Gerät | SG2 | Cookie des Anbieters gültig | mittel | Kurze Sitzungslaufzeit; Abmeldung überall in der Konsole (K5); Gerätesperre (Nutzerpflicht); Stufe 2: Passphrase nur im Speicher der Seite |
 | T13 | Denial of Service | — | Gegen den Anbieter | entfällt für den Server | Anbieter; Telegram bleibt |
 | T14 | Protokollierung sensibler Daten | SG2, SG5 | Token in Fehlertexten des Exporters; Anbieterprotokolle mit Pfaden | niedrig | Token in `Secrets` — Schwärzung nach ADR 0044; keine Geheimnisse in URLs; Pfade ohne Kurse |
 | T15 | Anbieter ändert Bedingungen, Stufe oder Preis; Konto gesperrt | SG7 | Kostenlose Stufe entfällt; Kontosperre | niedrig | Der Export ist portabel — Dateien, die jeder statische Host ausliefern kann; Wechsel in Stunden (8.7) |
-| T16 | **Lizenz und Deployment-Gate** | SG2 | L8: abgeleitete Finnhub-Daten bei einem Dritten; ADR 0022: Bereitstellung außerhalb des privaten Prototyps; IBKR-Kursdaten bei einem Dritten | Stufe 1: offen (O1); Stufe 2: Anbieter kann nichts lesen | Stufe 2 löst die Frage technisch; sonst Klärung durch den Inhaber |
+| T16 | **Lizenz und Deployment-Gate** | SG2 | L8: abgeleitete Finnhub-Daten bei einem Dritten; ADR 0022: Bereitstellung außerhalb des privaten Prototyps; IBKR-Kursdaten bei einem Dritten | Stufe 1: offen (O1); Stufe 2: Anbieter liest keine Inhalte, sieht Metadaten | Stufe 2 verringert das Risiko erheblich; die Einordnung bleibt beim Inhaber (O1) |
 | T17 | Verlust der Passphrase (Stufe 2) | SG7 | Vergessen, Passwortmanager verloren | niedrig, Schaden gering | Neuer Export mit neuer Passphrase — der Server hat den Klartext; nichts geht verloren |
 | T18 | Öffentliches Repository verrät Hostnamen oder Projekt | SG2 | Workflow-Datei, Doc 14, Commit-Nachricht | mittel, menschlich | Regel P5; Namen ausschließlich als Geheimnis oder Variable des Repositories |
+| T19 | Schadsoftware oder Keylogger auf dem **eigenen** Gerät | SG2, SG4, SG5 | Liest Sitzung, Passphrase und Anzeige mit; Stufe 2 schützt dagegen nicht — der Browser hält den Klartext | mittel | Gerätehygiene (Nutzerpflicht); kurze Sitzungen; der Schaden bleibt Lesen — außerhalb gibt es keinen Schreibpfad |
+| T20 | **Replay:** eine ältere, gültig verschlüsselte Datei unter demselben Pfad; Zurückschalten auf ein altes Deployment | SG3, SG7 | Token-Dieb, Host, Rollback-Funktion des Anbieters | niedrig, Auswirkung mittel | Export-Kennung in den Zusatzdaten jeder Datei und im verschlüsselten Manifest — eine Datei aus einem anderen Export wird verworfen (H3); alte Deployments beim Anbieter löschen (K4, O2); N17, N18 |
+| T21 | **Downgrade:** ein Angreifer mit Schreibzugriff setzt das Verfahren auf Klartext und legt Fälschungen daneben | SG3 | Ein Manifest im Klartext als Schalter | niedrig, Auswirkung hoch | Der Zero-Knowledge-Build nimmt **nur** Chiffrat an — das Verfahren ist Eigenschaft des Builds, nicht des Manifests; das Manifest ist selbst verschlüsselt; Ableitungsparameter mit Mindestwerten, die der Browser erzwingt (H3); N16 |
+| T22 | Anbieter-Insider mit Speicher-, aber ohne Deployment-Zugriff | SG2 | Liest den Speicher, kann nichts einspielen | niedrig | Genau der Angreifer, gegen den Stufe 2 vollständig wirkt: Chiffrat und opake Namen |
+
+Nicht in der Tabelle, weil sie bauartbedingt entfallen: Lateralbewegung
+auf dem Server, direkte Erreichbarkeit interner Dienste und ein Denial of
+Service gegen den Server — es gibt keinen eingehenden Weg und keinen
+Prozess draußen, der den Server erreicht (Abschnitt 4, Nachweis 11.4).
 
 ---
 
 ## 6. Untersuchte Varianten
 
 Drei Dimensionen, die sich kombinieren lassen: **Wo** die Seite liegt und
-wie die Anmeldung geschieht (H), **wie** die Daten dorthin kommen (P) und
+wie die Anmeldung geschieht (H), **wie** die Daten dorthin kommen (DW) und
 **wer** die Oberfläche baut (B).
 
 ### H0 — Referenz: zurückgestellter Overlay-Weg (ADR 0059)
@@ -370,9 +388,16 @@ Hosting-Anbieter, der **vor** die Seite eine Anmeldung stellt
 (beispielhaft: Cloudflare Pages mit Access — Einmalcode per E-Mail oder
 Anmeldung über ein GitHub-, Google- oder Microsoft-Konto mit dessen MFA,
 kostenlos bis zu einer Nutzerzahl weit über eins; Azure Static Web Apps —
-Anmeldung über GitHub, Microsoft oder Google mit Einladung je Rolle,
-kostenlose Stufe; Netlify oder Vercel mit Passwortschutz, dort
-kostenpflichtig).
+Anmeldung über GitHub oder Microsoft mit Einladung je Rolle, kostenlose
+Stufe — Google nach Kenntnisstand nur im kostenpflichtigen Plan; Netlify
+oder Vercel mit Passwortschutz, dort kostenpflichtig, Vercels Schutz für
+Vorschauen auch kostenlos). Zwei Fußangeln, nach Kenntnisstand und im PoC
+zu prüfen: Die Standard-Subdomain des Anbieters bleibt neben einem eigenen
+Namen erreichbar und braucht eine eigene Zugriffsregel; und liegt die
+Zugriffsregel in einer Konfigurationsdatei **im** Deployment (so bei Azure
+Static Web Apps), hebt ein Token-Dieb sie mit dem nächsten Upload auf —
+bevorzugt wird ein Anbieter, bei dem die Regel außerhalb des Deployments
+liegt (N19).
 
 - Eingehend am Server: nichts. Der Server lädt hoch.
 - Anmeldung: beim Anbieter, MFA über den Identitätsanbieter oder
@@ -402,32 +427,57 @@ TOTP; der Windows-Server lädt per `rsync`, `scp` oder HTTPS hoch.
 
 ### H3 — Zero-Knowledge: verschlüsselter Export
 
-Der Datenbaum wird **auf dem Server** verschlüsselt: Schlüssel aus einer
-Passphrase abgeleitet (PBKDF2-SHA256 mit hoher Iterationszahl — in der
-Standardbibliothek und in WebCrypto vorhanden —, Salt im Manifest),
-je Datei AES-256-GCM mit zufälliger Nonce und dem **Dateipfad als
-Zusatzdaten**, komprimiert vor dem Verschlüsseln. Die Oberfläche fragt die
-Passphrase ab, leitet den Schlüssel im Browser ab (WebCrypto, keine
-zusätzliche Bibliothek), entschlüsselt und dekomprimiert
-(`DecompressionStream`, in aktuellen Browsern vorhanden — im PoC zu
-prüfen). Der Schlüssel bleibt im Speicher der Seite.
+Der Datenbaum wird **auf dem Server** verschlüsselt und **im Browser**
+entschlüsselt; der Anbieter hält Chiffrat. Die Konstruktion —
+Standardverfahren, keine eigene Erfindung:
 
-- Anbieter sieht: **Chiffrat.** Auch nach einem Vorfall beim Anbieter
-  bleibt der Inhalt verschlossen.
-- Integrität: Eine gefälschte Datei entschlüsselt nicht; eine
-  **vertauschte** Datei (Chart einer anderen Aktie unter diesem Pfad)
-  scheitert an den Zusatzdaten. Das schützt die **Daten**, nicht die
-  Oberfläche: Wer den Host kontrolliert, kann die Seite selbst ersetzen
-  (R2).
+- **Schlüsselableitung:** PBKDF2-HMAC-SHA256 aus der Passphrase, mindestens
+  600.000 Iterationen (OWASP-Richtwert), zufälliges Salt je Export;
+  Standardbibliothek auf dem Server (`hashlib`), WebCrypto im Browser. Die
+  Passphrase kommt aus einem Passwortmanager und hat mindestens fünf
+  Wörter — bei H3 allein ist sie der einzige Schutz des Chiffrats.
+- **Verschlüsselung:** je Datei AES-256-GCM, 96-Bit-Zufallsnonce je
+  Datei, Zusatzdaten = Export-Kennung und kanonischer Dateipfad
+  (Schrägstriche, nicht Backslashes — der Exporter läuft unter Windows).
+  Eine Datei aus einem anderen Export oder unter einem anderen Pfad wird
+  verworfen (T20).
+- **Manifest:** selbst verschlüsselt und damit authentifiziert. Im
+  Klartext liegt nur ein kleiner Kopf mit Salt, Iterationszahl und
+  Formatversion, und der Browser erzwingt Mindestwerte — zu wenige
+  Iterationen heißt Abbruch. **Der Zero-Knowledge-Build der Oberfläche
+  nimmt Klartext gar nicht an:** Das Verfahren ist zur Bauzeit festgelegt
+  und wird nicht aus dem Manifest gelesen (T21).
+- **Metadaten:** opake Dateinamen (HMAC über den Pfad mit einem zweiten,
+  aus der Passphrase abgeleiteten Schlüssel; die Abbildung steht im
+  verschlüsselten Manifest — für Symbole wie `BRK B` ist eine Abbildung
+  ohnehin nötig) und Auffüllen auf feste Größenklassen vor dem
+  Verschlüsseln. Sichtbar bleiben Dateizahl und Größenklassen (R1).
+- **Kompression vor Verschlüsselung** (gzip); im Browser
+  `DecompressionStream` (aktuelle Browser, O6). Ein Seitenkanal über
+  Längen ist bei statischen Daten, die kein Angreifer beeinflusst, kein
+  Angriffsweg; das Auffüllen begrenzt ihn zusätzlich.
+- **Im Browser:** Schlüssel mit `extractable: false`, nur im Speicher der
+  Seite — kein `sessionStorage` (XSS-Reichweite), kein Service Worker,
+  keine Ablage im Cache (`Cache-Control: no-store` für den Datenbaum);
+  nach einem Neuladen wird neu abgeleitet, je Sitzung einmal (AK16).
+- **Deduplizierung:** Weil jede Datei mit neuer Nonce anders aussieht,
+  greift die Deduplizierung eines Anbieters nicht; der Exporter merkt sich
+  einen Hash des Klartexts je Datei und verschlüsselt nur Geändertes neu.
+
+Bewertung:
+
+- Anbieter sieht: **Chiffrat, Dateizahl, Größenklassen.** Auch nach einem
+  Vorfall beim Anbieter bleiben die Inhalte verschlossen.
+- Integrität: gefälschte, vertauschte oder veraltete **Daten** werden
+  verworfen; die **Oberfläche** bleibt Vertrauenssache des Hosts (R2).
 - Anmeldung: die Passphrase — genau die „einfache Anmeldung" aus I4;
   **ohne** Anmeldung an der Kante gibt es keine MFA, keine
-  Ratenbegrenzung und keine Anmeldeprotokolle; das Chiffrat ist dann
-  öffentlich und muss gegen Wörterbuchangriffe standhalten (starke
-  Passphrase, hohe Iterationszahl).
-- Kosten im Code: Verschlüsselung im Exporter (**neue Abhängigkeit**
-  `cryptography` für AES-GCM; PBKDF2 aus `hashlib`), Entschlüsselung im
-  Datenmodus der Oberfläche, Passphrase-Dialog. Überschaubar, aber
-  sicherheitskritischer Code, der eine unabhängige Review braucht.
+  Ratenbegrenzung und keine Anmeldeprotokolle, und das Chiffrat ist
+  öffentlich.
+- Kosten im Code: **neue Abhängigkeit** `cryptography` für AES-GCM auf dem
+  Server; Entschlüsselung im Datenmodus der Oberfläche; Passphrase-Dialog.
+  Überschaubar, aber sicherheitskritischer Code — unabhängige Review und
+  Testvektoren sind Bedingung.
 - Passphrase-Verlust: neuer Export — der Server hat den Klartext.
 
 ### H3 + H1 — Zero-Knowledge hinter der Anmeldung an der Kante
@@ -448,14 +498,14 @@ dafür auf dem Server, Laufzeit zu patchen, Kosten. **Verworfen:** Sie
 kauft Aktualität, die niemand braucht, mit der größten Angriffsfläche
 aller Varianten.
 
-### P — Datenweg vom Server nach draußen
+### DW — Datenweg vom Server nach draußen
 
 | # | Weg | Passt zu | Bewertung |
 |---|---|---|---|
-| P1 | **HTTPS-Upload aus Python** mit `httpx` an die Schnittstelle des Anbieters oder an einen S3-kompatiblen Objektspeicher | H1, H3 | Kein neues Werkzeug auf dem Handelsrechner; S3-Signierung braucht eine kleine Signierfunktion oder `boto3` (neue Abhängigkeit); Anbieter-Schnittstellen unterscheiden sich — der PoC entscheidet |
-| P2 | **Werkzeug des Anbieters** (auf Node-Basis, beispielhaft `wrangler`, SWA CLI) als Unterprozess | H1, H3 | Dedupliziert unveränderte Dateien, atomare Deployments mit Rollback; erweitert „Node ist Bauwerkzeug" um „Auslieferungswerkzeug" (D3); ein Werkzeug mehr auf dem Handelsrechner (T8) |
-| P3 | `rsync`, `scp` oder `rclone` | H2, Objektspeicher | Bewährt; `rclone` als zusätzliches Programm; Schlüsselverwaltung |
-| P4 | `git push` in ein privates Repository, der Anbieter baut daraus | H1 | **Verworfen:** täglich rund 70 MB Daten in der Git-Historie; ein Repository ist kein Datenspeicher |
+| DW1 | **HTTPS-Upload aus Python** mit `httpx` an einen S3-kompatiblen Objektspeicher oder eine dokumentierte Upload-Schnittstelle des Anbieters | H1, H3 | Kein neues Werkzeug auf dem Handelsrechner. **Aber:** Die beiden Beispielanbieter kapseln ihren Upload nach Kenntnisstand in Node-Werkzeuge ohne stabile HTTP-Schnittstelle. DW1 setzt damit praktisch Objektspeicher voraus — S3-Signierung selbst gebaut oder `boto3` als neue Abhängigkeit; Verzeichnisadressen des Exports (`/lauf/` → `index.html`) muss der Speicher eigens auflösen; und die Kantenanmeldung braucht dann einen Proxy oder einen eigenen Namen davor. Der PoC entscheidet; DW2 ist wahrscheinlicher |
+| DW2 | **Werkzeug des Anbieters** (auf Node-Basis, beispielhaft `wrangler`, SWA CLI) als Unterprozess aus dem Build-Node | H1, H3 | Dedupliziert unveränderte Dateien (in Stufe 2 nur mit dem Klartext-Hash des Exporters), atomare Deployments mit Rollback — auch für einen Angreifer (T20); verlangt einen Nachtrag zu ADR 0052 Punkt 2 (Node auch Auslieferungswerkzeug, D3); ein Werkzeug mehr auf dem Handelsrechner (T8) |
+| DW3 | `rsync`, `scp` oder `rclone` | H2, Objektspeicher | Bewährt; `rclone` als zusätzliches Programm; Schlüsselverwaltung |
+| DW4 | `git push` in ein privates Repository, der Anbieter baut daraus | H1 | **Verworfen:** täglich rund 70 MB Daten in der Git-Historie; ein Repository ist kein Datenspeicher |
 
 ### B — Wer baut die Oberfläche?
 
@@ -474,8 +524,13 @@ gleich.
 
 Skala: `++` sehr gut, `+` gut, `o` neutral, `−` schwach, `−−` ungeeignet.
 Keine Punktsumme. Kriterium 1 ist das K.-o.-Kriterium dieses Spikes: Der
-Server darf nicht erreichbarer werden. Die Kriterien 16 bis 18 sind neu
-gegenüber dem ersten Spike und bilden die Vorgaben I2 bis I5 ab.
+Server darf nicht erreichbarer werden. Gegenüber dem ersten Spike sind die
+Kriterien 1 bis 7 umgebaut — Angriffsfläche getrennt nach Server und
+Dashboard, Vertraulichkeit gegenüber dem Anbieter und Integrität der
+Anzeige statt Netzsegmentierung und Dienstschutz —, die Kriterien 16 bis
+18 sind neu und bilden I2 und I4 ab; I3 gilt für jede Variante gleich, I5
+ist durch die H3-Spalten erfüllt. H0 steht deshalb auf einer anderen Skala
+als im ersten Spike.
 
 | # | Kriterium | H1 Kante | H2 VPS | H3 ZK allein | **H3 + H1** | H4 API | H0 Overlay |
 |---|---|---|---|---|---|---|---|
@@ -483,7 +538,7 @@ gegenüber dem ersten Spike und bilden die Vorgaben I2 bis I5 ab.
 | 2 | Angriffsfläche des **Dashboards** | `−` | `−−` | `o` | `o` | `−−` | `++` |
 | 3 | Eingehende Freigaben am Server | `++` | `++` | `++` | `++` | `++` | `++` |
 | 4 | Authentifizierung, MFA | `+` | `o` | `−` | `++` | `o` | `++` |
-| 5 | Vertraulichkeit gegenüber dem Anbieter (L8, ADR 0022) | `−−` | `−` | `++` | `++` | `−−` | `++` |
+| 5 | Vertraulichkeit gegenüber dem Anbieter (L8, ADR 0022) | `−−` | `−` | `+` | `+` | `−−` | `++` |
 | 6 | Integrität der Anzeige | `o` | `o` | `+` | `+` | `−` | `++` |
 | 7 | TLS und Zertifikate | `++` | `+` | `++` | `++` | `++` | `+` |
 | 8 | Secret-Management | `+` | `+` | `+` | `+` | `−` | `+` |
@@ -515,7 +570,8 @@ Begründungen je Kriterium:
    Geräteschlüssel.
 5. **Vertraulichkeit.** H1/H4: Klartext beim Anbieter — die Lizenzfrage
    stellt sich (O1). H2: Klartext beim Hoster, weniger Mandanten. H3:
-   Chiffrat. H0: Daten verlassen den Server nicht.
+   Chiffrat; Dateizahl und Größenklassen bleiben sichtbar, deshalb `+`.
+   H0: Daten verlassen den Server nicht.
 6. **Integrität.** H3: gefälschte oder vertauschte Daten werden verworfen;
    die Oberfläche bleibt Vertrauenssache des Hosts. H1/H2: Host und Token
    sind Vertrauensanker; die Telegram-Meldung ist die Gegenprobe. H4: eine
@@ -551,8 +607,9 @@ Begründungen je Kriterium:
     frei (T3). H3: eine vergessene Regel legt Chiffrat frei. H3 + H1:
     beide Schichten müssten fallen.
 
-**Ergebnis:** H3 + H1 steht in allen sicherheitsbezogenen Zeilen vorn,
-H1 allein im Aufwand. H2 und H4 scheiden aus. H0 bleibt die sicherste
+**Ergebnis:** H3 + H1 steht in den meisten sicherheitsbezogenen Zeilen
+vorn — hinter H0 bei Dashboard-Angriffsfläche und Integrität, hinter H3
+allein bei der Drittanbieter-Abhängigkeit —, H1 allein im Aufwand. H2 und H4 scheiden aus. H0 bleibt die sicherste
 Antwort auf die Frage nach dem Serverzugang, verfehlt aber I4.
 
 ---
@@ -563,28 +620,32 @@ Antwort auf die Frage nach dem Serverzugang, verfehlt aber I4.
 
 | Stufe | Inhalt | Bedingung |
 |---|---|---|
-| **1 — Statischer Export mit Anmeldung an der Kante (H1, B1, P1 oder P2)** | Exporter auf dem Server, statischer Datenmodus der Oberfläche, Upload nach jedem Lauf, Anmeldung mit MFA beim Anbieter | PoC bestanden (11); ADR 0060 angenommen; Lizenzfrage O1 vom Inhaber beschieden **oder** Stufe 2 fest eingeplant |
-| **2 — Zero-Knowledge (H3 + H1)** | Verschlüsselung im Exporter, Entschlüsselung in der Oberfläche, Passphrase im Passwortmanager; Anmeldung an der Kante bleibt | Stufe 1 in Betrieb; unabhängige Review des Kryptocodes |
+| **1 — Statischer Export mit Anmeldung an der Kante (H1, B1, DW1 oder DW2)** | Exporter auf dem Server, statischer Datenmodus der Oberfläche, Upload nach jedem Lauf, Anmeldung mit MFA beim Anbieter | PoC bestanden (11); ADR 0060 angenommen; Lizenzfrage O1 vom Inhaber beschieden **oder** Stufe 2 fest eingeplant |
+| **2 — Zero-Knowledge (H3 + H1)** | Verschlüsselung im Exporter, eigener Zero-Knowledge-Build der Oberfläche, der nur Chiffrat annimmt, Passphrase im Passwortmanager; Anmeldung an der Kante bleibt | Stufe 1 in Betrieb; unabhängige Review des Kryptocodes |
 
 Der Bauplan von Stufe 1 sieht Stufe 2 vor, ohne sie zu bauen: Der
 Exporter schreibt Dateien über eine Schreibfunktion, die in Stufe 2 die
 Verschlüsselung übernimmt; der Datenmodus der Oberfläche lädt Dateien
 über eine Ladefunktion, die in Stufe 2 entschlüsselt. Das Manifest trägt
-von Anfang an ein Feld für das Verfahren.
+von Anfang an eine Formatversion; das Verfahren ist eine Eigenschaft des
+Builds, nicht des Manifests (T21).
 
 **Empfohlen ist, Stufe 2 nicht offen zu lassen.** Stufe 1 allein legt
 Berichte, Optionsvorschläge, Kursreihen und die Watchlist im Klartext zu
 einem Anbieter — das ist die Lage, die ADR 0049 mit „solange nichts das
-eigene Netz verlässt" bewusst vermieden hat. Stufe 2 beantwortet Finnhub
-L8 und das Deployment-Gate technisch und macht zugleich die Anzeige gegen
-gefälschte Daten robust. Ob sie unmittelbar folgt oder Stufe 1 erst eine
+eigene Netz verlässt" bewusst vermieden hat. Stufe 2 verringert das Risiko aus
+Finnhub L8 und dem Deployment-Gate erheblich — die Einordnung bleibt O1 —
+und macht zugleich die Daten gegen Fälschung, Vertauschung und Replay
+robust. Ob sie unmittelbar folgt oder Stufe 1 erst eine
 Weile läuft, ist Entscheidungspunkt E1.
 
 ### 8.2 Der Datenbaum
 
 ```text
-data/manifest.json                        Zeitpunkt, Lauf-ID, Anwendungs-, Schema-, Regelversion,
-                                          Verfahren (klar | aes-gcm), Salt, Iterationen
+data/manifest.json                        Zeitpunkt, Lauf-ID, Export-Kennung, Anwendungs-, Schema-,
+                                          Regelversion, Formatversion — in Stufe 2 selbst verschlüsselt
+data/manifest.head.json                   nur Stufe 2: Salt, Iterationszahl, Formatversion (Klartext,
+                                          Mindestwerte erzwingt der Browser)
 data/analysis-runs.json                   alle Läufe, neueste zuerst (Paginierung im Browser)
 data/analysis-runs/<run_id>.json          Laufdetail
 data/analysis-runs/<run_id>/reports.json  Kurzliste der Berichte des Laufs
@@ -601,7 +662,9 @@ data/options-backtests/<measurement_id>.json
   zweite Rechnung, kein zweiter Zuschnitt (Doc 12: keine Geschäftslogik im
   Frontend; hier: keine zweite Wahrheit im Export).
 - Symbole mit Leerzeichen oder Punkt (`BRK B`) brauchen einen
-  dateisicheren Namen; die Abbildung steht im Manifest.
+  dateisicheren Namen; die Abbildung steht im Manifest. In Stufe 2 sind
+  **alle** Dateinamen opak, und die Abbildung liegt im verschlüsselten
+  Manifest (H3).
 - Paginierung und Statusfilter der Läufe geschehen im Browser — die Liste
   ist klein (ein Lauf je Handelstag).
 - `measurement_id` am Backtest: Stufe 1 liefert nur die jüngste Messung;
@@ -614,8 +677,14 @@ data/options-backtests/<measurement_id>.json
 ### 8.3 Anmeldung an der Kante
 
 - Die Zugriffsregel deckt den **ganzen Hostnamen** ab — jede Datei, auch
-  `data/*`, auch Vorschau- oder Zweigadressen des Anbieters, die manche
-  Anbieter ungeschützt lassen (T3, N1–N4).
+  `data/*`, auch Vorschau-, Zweig- und ältere Deployment-Adressen des
+  Anbieters, die manche Anbieter ungeschützt lassen, auch die
+  Standard-Subdomain neben einem eigenen Namen (T3, N1–N4). Bevorzugt ein
+  Anbieter, bei dem die Regel **außerhalb des Deployments** liegt — liegt
+  sie in einer Datei im Deployment, hebt ein Token-Dieb sie mit dem
+  nächsten Upload auf (N19). Und ein Anbieter, der **alte Deployments
+  löschen** lässt: Sonst ist seine Historie eine Datenhalde aller
+  Snapshots (T20, O2).
 - MFA: Anmeldung über ein Identitätsanbieter-Konto mit Authenticator-App
   oder Passkey; E-Mail-Einmalcode nur als Rückfall (T2). Genau ein
   erlaubter Nutzer (P1).
@@ -624,8 +693,9 @@ data/options-backtests/<measurement_id>.json
   PoC zu prüfen (AK6); Abmeldung überall aus der Konsole (K5).
 - Kein eigenes Anmeldeformular, kein eigener Sitzungscode, kein
   `ATA_SESSION_SECRET` — der Vorrat bleibt reserviert.
-- `robots.txt` und `noindex`-Header; Anbieter-Subdomain und Projektname
-  **nichtssagend**; wenn ein eigener Name, dann ebenso (T9).
+- `robots.txt` und `noindex`-Header; Anbieter-Subdomain, Projektname und
+  die Anmeldedomain des Anbieters **nichtssagend**; wenn ein eigener Name,
+  dann ebenso (T9).
 - Sicherheits-Header über die Konfiguration des Anbieters:
   `Content-Security-Policy` mit Selbstherkunft (Inline-Skripte des
   statischen Exports per Hash oder `'unsafe-inline'`, im PoC zu messen),
@@ -643,21 +713,27 @@ data/options-backtests/<measurement_id>.json
 - **Schaltung:** wie die Anbieter — ein Argument der Aufgabenplanung
   (`--dashboard-publisher <anbieter>`), Konfiguration ausgeliefert auf
   `none` (P8).
-- **Token:** ein Geheimnis `ATA_DASHBOARD_PUBLISH_TOKEN`, beim Anbieter
-  **auf genau diese Seite und auf Schreiben** beschränkt — kein
-  Kontozugriff, keine DNS-Rechte, keine anderen Projekte. Rotation
+- **Token:** ein Geheimnis `ATA_DASHBOARD_PUBLISH_TOKEN`, beim Anbieter so
+  eng wie möglich: **auf Schreiben** und, wo der Anbieter
+  Projekt-Granularität bietet, **auf genau diese Seite**. Bietet er sie
+  nicht — nach Kenntnisstand vergeben manche Anbieter Deploy-Rechte je
+  Konto —, dann ein **eigenes Konto nur für diesen Zweck**, damit das Token
+  nichts anderes erreicht. Kein DNS-Recht, kein Kontozugriff. Rotation
   jährlich und bei Verdacht; in `Secrets`, damit die Schwärzung greift
   (ADR 0044). Wer den Server hat, hat das Token — und damit nichts, was er
   nicht ohnehin hätte (der Server ist die Quelle).
 - **Passphrase (Stufe 2):** `ATA_DASHBOARD_EXPORT_PASSPHRASE`, ebenfalls
   in `Secrets`; dieselbe Passphrase im Passwortmanager des Inhabers.
-- **Upload:** P1 (`httpx`) bevorzugt, weil kein neues Programm auf dem
-  Handelsrechner entsteht; wo die Schnittstelle des Anbieters das nicht
-  hergibt, P2 mit dem Anbieter-Werkzeug als Unterprozess aus dem Build-Node
-  — dann ist ADR 0052 Punkt 2 zu ergänzen (D3). Der PoC entscheidet.
+- **Upload:** DW1 (`httpx`) wäre der schmalste Weg, weil kein neues
+  Programm auf dem Handelsrechner entsteht; für die beiden Beispielanbieter
+  ist DW2 mit dem Anbieter-Werkzeug als Unterprozess aus dem Build-Node
+  wahrscheinlicher (Abschnitt 6, DW) — dann bekommt ADR 0052 einen Nachtrag
+  zu Punkt 2 (D3). Der PoC entscheidet, mit Nachweis der Token-Reichweite
+  (AK9).
 - **Umfang je Lauf:** Manifest, Läufe, neue Berichte, alle Charts, alle
-  Backtests; unveränderte Dateien nicht erneut hochladen, wo das Werkzeug
-  dedupliziert. Ein `cli publish --full` für den Vollexport.
+  Backtests; unveränderte Dateien nicht erneut hochladen — in Stufe 2
+  anhand eines Klartext-Hashs je Datei, weil Chiffrat sich mit jeder Nonce
+  ändert. Ein `cli publish --full` für den Vollexport.
 - **Rückgabewert:** Der Exportschritt meldet Erfolg oder Fehlschlag ins
   Protokoll und — bei Fehlschlag — über die vorhandene Telegram-Meldung
   („Dashboard nicht aktualisiert"), ohne Inhalte (ADR 0040).
@@ -711,14 +787,14 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 
 | # | Risiko | Einschätzung | Umgang |
 |---|---|---|---|
-| R1 | **Anbieter liest die Daten** (Stufe 1) — und die Lizenzfrage O1 bleibt bis Stufe 2 offen | Stufe 1: gegeben | Stufe 2 einplanen (E1); bis dahin Bescheid des Inhabers |
+| R1 | **Anbieter liest die Daten** (Stufe 1); in Stufe 2 sieht er noch Dateizahl und Größenklassen, und die Lizenzfrage O1 bleibt eine Einordnung des Inhabers | Stufe 1: gegeben; Stufe 2: Restleck Metadaten | Stufe 2 einplanen (E1); opake Namen und Auffüllen (H3); Bescheid des Inhabers zu O1 |
 | R2 | **Kompromittierter Host ersetzt die Oberfläche** — auch Zero-Knowledge schützt nur die Daten, nicht die Seite, die die Passphrase abfragt | niedrig, Auswirkung hoch | Telegram als unabhängige Gegenprobe (Symbole, Scores, Stufe); Deployment-Protokoll des Anbieters; Build aus Lock-File; Stufe 2 macht gefälschte **Daten** unmöglich, eine gefälschte **Seite** nicht |
 | R3 | **Phishing der Kantenanmeldung** mit Einmalcode | mittel | Identitätsanbieter mit Authenticator-App oder Passkey statt Einmalcode; Stufe 2 begrenzt den Schaden auf Chiffrat |
 | R4 | **Vergessene Regel** legt eine Adresse ohne Anmeldung frei (Vorschau, zweiter Zweig, Bucket) | mittel bei Einrichtung | N1–N4; Prüfung von außen im Turnus (13); Stufe 2 |
 | R5 | **Sitzung auf entwendetem Gerät** | mittel | Kurze Laufzeit; Abmeldung überall (K5); Gerätesperre |
 | R6 | **Stiller Upload-Fehler** | mittel | Manifest sichtbar; Telegram bei Fehlschlag; Rückgabewert (8.4) |
 | R7 | **Anbieter ändert Stufe oder Bedingungen** | niedrig | Portabler Export; Wechsel in Stunden (8.7) |
-| R8 | **Upload-Werkzeug auf dem Handelsrechner** (P2) | niedrig | P1 bevorzugen; sonst signiertes Paket, Aktualisierung im Turnus |
+| R8 | **Upload-Werkzeug auf dem Handelsrechner** (DW2) | niedrig | DW1, wo eine Schnittstelle es trägt; sonst signiertes Paket, Aktualisierung im Turnus |
 | R9 | **Kryptocode mit Fehler** (Stufe 2) — falsche Ableitung, wiederverwendete Nonce, fehlende Zusatzdaten | niedrig, Auswirkung hoch | Standardverfahren, keine eigene Konstruktion; unabhängige Review; Testvektoren |
 | R10 | **Wachsender Export** (Berichte kumulieren) | niedrig | Nur neue Berichte hochladen; nach Jahren gegebenenfalls Archivgrenze — eine Entscheidung, keine Notwendigkeit |
 
@@ -731,9 +807,9 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 | # | Frage | Warum sie zählt |
 |---|---|---|
 | O1 | **Finnhub L8, ADR 0022, IBKR-Bedingungen:** Ist ein Hosting-Anbieter, der Klartext speichert, ein „Dritter"? Und ist ein Anbieter, der nur Chiffrat speichert, keiner? | Stufe 1 gegen Stufe 2; nur der Inhaber kann das beschließen |
-| O2 | Welche Nutzungsbedingungen hat die kostenlose Stufe des gewählten Anbieters (private Nutzung, Datenverarbeitung, Kündigung, Speicherort)? | 11.1 |
+| O2 | Welche Nutzungsbedingungen hat die kostenlose Stufe des gewählten Anbieters (private Nutzung, Datenverarbeitung, Kündigung, Speicherort)? Lassen sich alte Deployments löschen, oder behält der Anbieter jede Fassung unter eigener Adresse (T20)? Liegt die Zugriffsregel außerhalb des Deployments (N19)? Gibt es Deploy-Rechte je Projekt (AK9)? | 11.1, 8.3, 8.4 |
 | O3 | Gibt es ein Konto bei einem Identitätsanbieter mit Authenticator-App oder Passkey, das der Inhaber für die Kantenanmeldung nutzen will? | 8.3, T2 |
-| O4 | Steht Node auf dem Server (A4)? Ist ein Anbieter-Werkzeug als Unterprozess akzeptabel (D3)? | P1 gegen P2 |
+| O4 | Steht Node auf dem Server (A4)? Ist ein Anbieter-Werkzeug als Unterprozess akzeptabel (D3)? | DW1 gegen DW2 |
 | O5 | Wie groß ist der echte Export (Berichte, Backtests)? | A1; der PoC misst |
 | O6 | Welche Browser sollen unterstützt werden (`DecompressionStream`, WebCrypto)? | Stufe 2 |
 | O7 | Soll das LAN-Dashboard auf dem Server bestehen bleiben? | Doc 14 Stufe J; empfohlen: ja, es kostet nichts |
@@ -750,7 +826,7 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 | E1 | Stufe 2 (Zero-Knowledge) unmittelbar nach Stufe 1, oder Stufe 1 erst eine Weile betreiben? | **Unmittelbar einplanen**; Stufe 1 nur als Zwischenstand |
 | E2 | Anmeldung an der Kante über Identitätsanbieter (Authenticator-App, Passkey) oder E-Mail-Einmalcode? | **Identitätsanbieter**; Einmalcode nur Rückfall |
 | E3 | Bauweise B1 (Server baut und lädt alles) oder B2 (CI baut die Oberfläche)? | **B1** |
-| E4 | Datenweg P1 (Python, `httpx`) oder P2 (Anbieter-Werkzeug)? | **P1**, wenn die Schnittstelle des Anbieters es trägt; sonst P2 mit Ergänzung zu ADR 0052 |
+| E4 | Datenweg DW1 (Python, `httpx`) oder DW2 (Anbieter-Werkzeug)? | **DW2 ist wahrscheinlich** — die Beispielanbieter kapseln den Upload in Node-Werkzeuge; dann Nachtrag zu ADR 0052 Punkt 2. DW1 nur, wenn der PoC eine tragfähige HTTP-Schnittstelle findet |
 | E5 | Link zum Dashboard in der Telegram-Meldung, sobald es außerhalb steht? | Eigene Abwägung gegen ADR 0040; **erst nach Stufe 2**, dann ja — der Link führt zu Chiffrat hinter Anmeldung |
 | E6 | Eigener Domainname oder Subdomain des Anbieters? | **Subdomain des Anbieters** mit nichtssagendem Namen — ein eigener Name steht in öffentlichen Verzeichnissen |
 | E7 | ADR 0059 (Overlay) endgültig verwerfen oder für die Fernwartung des Servers offenhalten? | **Offenhalten** für O12; für das Dashboard verwerfen |
@@ -783,11 +859,11 @@ unverändert erreichbar — nämlich gar nicht.
    Datenmodus bauen — Prototyp, keine Produktreife; nichts davon wird
    gemergt, bevor ADR 0060 angenommen ist.
 3. Upload vom Entwicklungsrechner mit einem schreibbeschränkten Token
-   (P1 oder P2); Anmeldung an der Kante einrichten; Regel auf den ganzen
+   (DW1 oder DW2); Anmeldung an der Kante einrichten; Regel auf den ganzen
    Hostnamen.
 4. Abnahme- und Negativtests (11.3), soweit sie ohne Server gehen.
 5. Für Stufe 2 (wenn E1 „unmittelbar"): Verschlüsselung im Wegwerf-Skript,
-   Entschlüsselung im Prototyp; Tests N9–N12.
+   Entschlüsselung im Prototyp; Tests N9–N12 und N16–N18.
 6. Rückbau der Phase durchspielen (11.5).
 
 **Abbruch, wenn:** ein Negativtest besteht, obwohl er scheitern müsste —
@@ -801,8 +877,8 @@ dann ist die Regel falsch, nicht der Datenweg.
 2. Nachweis, dass der Server unverändert ist: keine neue Firewallregel,
    kein neuer lauschender Port, keine neue Software außer gegebenenfalls
    dem Upload-Werkzeug (11.4).
-3. Wiederholung der Tests aus 11.3, jetzt gegen den Upload vom Server;
-   Messung der Upload-Dauer (A2).
+3. Wiederholung der Tests aus 11.2 Punkt 4 und der beiden Tabellen unten,
+   jetzt gegen den Upload vom Server; Messung der Upload-Dauer (A2).
 4. Notausschalter durchspielen (12), Rückbau (11.5).
 
 **Abnahmekriterien**
@@ -817,14 +893,14 @@ dann ist die Regel falsch, nicht der Datenweg.
 | AK6 | Sitzungscookie `Secure`, `HttpOnly`, `SameSite`; Laufzeit wie konfiguriert; nach Ablauf erneute Anmeldung | Browser-Werkzeuge; N6 |
 | AK7 | Sicherheits-Header vorhanden; `noindex`; `robots.txt` | `curl -I` |
 | AK8 | Projekt- und Hostname nichtssagend; keiner davon im Repository | Suche im Repository |
-| AK9 | Das Token kann **nur** diese Seite beschreiben: Ein Versuch, mit dem Token etwas anderes zu lesen oder zu ändern, scheitert | Probe gegen die Anbieter-Schnittstelle; N7 |
+| AK9 | Das Token kann nur schreiben, und nur, was es soll: Ein Versuch, damit etwas anderes zu lesen oder zu ändern, scheitert; bietet der Anbieter keine Projekt-Granularität, ist das Konto ein eigenes nur für diesen Zweck | Probe gegen die Anbieter-Schnittstelle; N7, N19 |
 | AK10 | Der Upload läuft vom Server rein ausgehend; auf dem Server keine neue eingehende Regel, kein neuer lauschender Port | `Get-NetFirewallRule`, `Get-NetTCPConnection -State Listen` vor und nach dem PoC identisch (11.4) |
 | AK11 | Ein absichtlich fehlgeschlagener Upload (falsches Token) endet mit Fehlermeldung im Protokoll und Rückgabewert ≠ 0, und die Seite zeigt den **alten** Stand mit altem Datum | Probe; N8 |
 | AK12 | Das Token erscheint in keinem Protokoll | Suche nach dem Token in Ausgabe und Datei |
 | AK13 | Upload-Dauer und Exportgröße gemessen und protokolliert | Messung |
-| AK14 | Stufe 2: Datendateien beim Anbieter sind Chiffrat; ohne Passphrase zeigt die Seite nichts; Manifest-Feld `verfahren` gesetzt | Rohdatei laden; N9 |
-| AK15 | Stufe 2: falsche Passphrase, veränderte Datei und vertauschte Datei werden erkannt und mit Fehlermeldung verworfen | N10–N12 |
-| AK16 | Stufe 2: Passphrase-Ableitung und Entschlüsselung im Browser dauern auf dem Smartphone unter zwei Sekunden für die Tagesübersicht | Messung |
+| AK14 | Stufe 2: Datendateien und Manifest beim Anbieter sind Chiffrat, im Klartext liegt nur der Kopf mit Salt, Iterationszahl und Formatversion; ohne Passphrase zeigt die Seite nichts; Dateinamen opak | Rohdatei laden; N9, N18 |
+| AK15 | Stufe 2: falsche Passphrase, veränderte, vertauschte und veraltete Datei sowie ein auf Klartext oder wenige Iterationen gesetzter Kopf werden erkannt und mit Fehlermeldung verworfen | N10–N12, N16, N17 |
+| AK16 | Stufe 2: Passphrase-Ableitung (einmal je Sitzung, mindestens 600.000 Iterationen) und Entschlüsselung der Tagesübersicht dauern auf dem Smartphone zusammen unter zwei Sekunden | Messung |
 | AK17 | Notausschalter K1 wirkt binnen Sekunden | Probe |
 | AK18 | Der Rückbau hinterlässt nichts (11.5) | Prüfliste |
 
@@ -834,11 +910,11 @@ dann ist die Regel falsch, nicht der Datenweg.
 |---|---|---|
 | N1 | `GET /` ohne Sitzung | Umleitung zur Anmeldung oder `401`/`403`, kein Inhalt |
 | N2 | `GET /data/manifest.json` und `GET /data/stocks/<symbol>/chart.json` ohne Sitzung | kein Inhalt |
-| N3 | Vorschau-, Zweig- oder Deployment-Adresse des Anbieters ohne Sitzung | kein Inhalt |
+| N3 | Vorschau-, Zweig- oder Deployment-Adresse des Anbieters ohne Sitzung — auch die eines **älteren** Deployments und die Standard-Subdomain neben einem eigenen Namen | kein Inhalt |
 | N4 | Direkter Zugriff auf den Speicher hinter der Seite (Bucket, Deployment-URL), falls es einen gibt | kein Inhalt |
 | N5 | Anmeldung mit einem zweiten, nicht erlaubten Konto beim Identitätsanbieter | abgewiesen |
 | N6 | Wiederverwendung eines abgelaufenen Sitzungscookies | abgewiesen |
-| N7 | Mit dem Upload-Token: andere Projekte lesen, DNS ändern, Konto lesen | abgewiesen |
+| N7 | Mit dem Upload-Token: andere Projekte lesen, DNS ändern, Konto lesen, ein altes Deployment aktiv schalten | abgewiesen — oder, beim Rollback, dokumentierte Einschränkung des Anbieters mit Löschung alter Deployments als Ausgleich (K4) |
 | N8 | Upload mit falschem Token | scheitert laut, alter Stand bleibt |
 | N9 | Stufe 2: Rohdatei aus dem Speicher als JSON lesen | nicht lesbar (Chiffrat) |
 | N10 | Stufe 2: falsche Passphrase | Fehlermeldung, keine Daten |
@@ -846,6 +922,11 @@ dann ist die Regel falsch, nicht der Datenweg.
 | N12 | Stufe 2: Chart-Datei einer Aktie unter dem Pfad einer anderen abgelegt | verworfen (Zusatzdaten) |
 | N13 | Suchmaschine oder öffentliches Verzeichnis: Suche nach dem Hostnamen nach zwei Wochen | Anmeldeseite höchstens; keine Inhalte indexiert |
 | N14 | Nach K1: Aufruf der Seite | kein Inhalt |
+| N15 | Nach K5 (alle Sitzungen beenden): eine zuvor angemeldete Sitzung ruft die Seite auf | sofort abgewiesen — nicht erst nach Ablauf |
+| N16 | Stufe 2: Kopf oder Manifest auf Klartext beziehungsweise auf wenige Iterationen gesetzt | der Zero-Knowledge-Build verwirft es; keine Anzeige |
+| N17 | Stufe 2: eine gültig verschlüsselte Datei eines **älteren** Exports unter demselben Pfad | verworfen (Export-Kennung in den Zusatzdaten) |
+| N18 | Stufe 2: Dateinamen und Größen im Speicher des Anbieters | keine Symbole, keine Berichtskennungen erkennbar — nur opake Namen und Größenklassen |
+| N19 | Ein Deployment, das die Zugriffsregel des Anbieters aufheben will (falls die Regel im Deployment liegt) | die Regel bleibt — oder der Anbieter scheidet aus, weil ein Token-Dieb sie sonst mit einem Upload aufhöbe |
 
 ### 11.4 Verifikation: Der Server bleibt unerreichbar
 
@@ -865,9 +946,9 @@ dann ist die Regel falsch, nicht der Datenweg.
 |---|---|---|
 | RB1 | PoC-Aufgabe auf dem Server löschen; Token aus der Umgebung entfernen | `Get-ScheduledTask` ohne Treffer |
 | RB2 | Token beim Anbieter widerrufen | Konsole |
-| RB3 | Seite und Projekt beim Anbieter löschen; Zugriffsregel entfernen | Konsole; N14 |
+| RB3 | Seite, **alle** Deployments und Projekt beim Anbieter löschen; Zugriffsregel entfernen | Konsole; N14 |
 | RB4 | PoC-Datenbank `ata_poc` löschen | `psql -l` |
-| RB5 | Upload-Werkzeug (falls P2) vom Server entfernen, sofern nicht für Stufe 1 übernommen | Programme und Features |
+| RB5 | Upload-Werkzeug (falls DW2) vom Server entfernen, sofern nicht für Stufe 1 übernommen | Programme und Features |
 | RB6 | PoC-Branch der Oberfläche bleibt als Beleg, wird nicht gemergt | — |
 | RB7 | Wiederherstellungscodes und Konto bleiben beim Inhaber | — |
 | RB8 | 11.4 wiederholen | identisch |
@@ -875,7 +956,7 @@ dann ist die Regel falsch, nicht der Datenweg.
 ### 11.6 Ergebnis des PoC
 
 PoC-Protokoll ohne identifizierende Angaben (P5): Anbieter, Datenweg,
-Bauweise, Größen, Dauer, AK1–AK18, N1–N14, Rückbau. **Bestanden heißt:**
+Bauweise, Größen, Dauer, AK1–AK18, N1–N19, Rückbau. **Bestanden heißt:**
 alle AK erfüllt, alle N gescheitert, 11.4 ohne Befund. Dann wird ADR 0060
 angenommen, und Stufe 1 wird ein eigenes Feature: Exporter, Datenmodus,
 Doc 14 Stufe K, Notfallkarte.
@@ -886,11 +967,11 @@ Doc 14 Stufe K, Notfallkarte.
 
 | # | Ebene | Handgriff | Wirkt | Von wo | Prüfung |
 |---|---|---|---|---|---|
-| K1 | Anbieter, Seite | Seite oder Zugriffsregel in der Konsole abschalten oder löschen | Sekunden | jedes Gerät | N14 |
+| K1 | Anbieter, Seite | Seite oder Zugriffsregel in der Konsole abschalten oder löschen — einschließlich aller alten Deployments | Sekunden | jedes Gerät | N14, N3 |
 | K2 | Anbieter, Token | Upload-Token widerrufen | sofort für den nächsten Upload | jedes Gerät | Upload scheitert (N8) |
 | K3 | Server | Exportschritt abschalten (`--dashboard-publisher none` in der Aufgabenplanung) | nächster Lauf | Server | Protokoll |
-| K4 | Stufe 2 | Passphrase wechseln, alten Export löschen, neu hochladen | Minuten | Server und Konsole | alte Dateien weg |
-| K5 | Anbieter, Konto | Alle Sitzungen beenden, Anmeldung beim Identitätsanbieter neu setzen | sofort | jedes Gerät | erneute Anmeldung nötig |
+| K4 | Stufe 2 | Passphrase wechseln, neu hochladen und **alle** alten Deployments beim Anbieter löschen — ein Passphrase-Wechsel macht alte Chiffrate nicht unlesbar (O2) | Minuten | Server und Konsole | keine alte Fassung mehr erreichbar (N3) |
+| K5 | Anbieter, Konto | Alle Sitzungen beenden, Anmeldung beim Identitätsanbieter neu setzen | sofort | jedes Gerät | erneute Anmeldung nötig (N15) |
 
 Was der Notausschalter nicht tut: Er hält den Tageslauf nicht an, er
 löscht keine Daten auf dem Server, und er ändert nichts am LAN-Dashboard.
@@ -904,7 +985,7 @@ löscht keine Daten auf dem Server, und er ändert nichts am LAN-Dashboard.
 | täglich (automatisch) | Exportschritt meldet Erfolg; Manifest-Stand in der Oberfläche entspricht dem letzten Lauf; Telegram bei Fehlschlag |
 | wöchentlich (automatisch) | `audit.yml`; in Stufe 2 Meldungen zur Kryptobibliothek binnen Tagen |
 | monatlich | Anmeldeprotokoll des Anbieters: nur eigene Anmeldungen; Deployment-Protokoll: nur eigene Uploads; Sitzungen beenden |
-| quartalsweise | N1–N4 und N13 wiederholen (Prüfung von außen ohne Sitzung); Header und `noindex` prüfen; Token-Reichweite (AK9); Regel: genau ein Nutzer |
+| quartalsweise | N1–N4 und N13 wiederholen (Prüfung von außen ohne Sitzung); Deployment-Historie beim Anbieter leeren; Header und `noindex` prüfen; Token-Reichweite (AK9); Regel: genau ein Nutzer |
 | jährlich | Token rotieren; Nutzungsbedingungen erneut lesen; Wiederherstellungscodes prüfen; Stufe 2: Passphrase wechseln, Vollexport |
 | bei Anbieterwechsel | 8.7: Konto, Token, `cli publish --full`, alle AK erneut |
 
@@ -918,8 +999,8 @@ löscht keine Daten auf dem Server, und er ändert nichts am LAN-Dashboard.
 - Keine Messung des echten Exports (nur der Chart-Payload; der Rest ist
   geschätzt, A1).
 - Keine rechtliche Bewertung von L8, ADR 0022 und den IBKR-Bedingungen —
-  O1 bleibt beim Inhaber; Stufe 2 macht sie technisch gegenstandslos,
-  soweit ein Anbieter, der nur Chiffrat hält, kein Leser ist.
+  O1 bleibt beim Inhaber; Stufe 2 verringert das Risiko, ersetzt die
+  Einordnung nicht.
 - Keine Entscheidung über den zurückgestellten Overlay-Weg für die
   Fernwartung (O12, E7).
 
@@ -929,13 +1010,13 @@ löscht keine Daten auf dem Server, und er ändert nichts am LAN-Dashboard.
 flowchart LR
     subgraph HOST["Windows-Server — LAN, unverändert erreichbar: gar nicht"]
         RUN["Tageslauf"]
-        EXP["Exporter<br/>Datenbaum + Manifest<br/>gzip, dann AES-GCM<br/>(Pfad als Zusatzdaten)"]
+        EXP["Exporter<br/>Datenbaum + Manifest (verschlüsselt)<br/>gzip, Auffüllen, AES-GCM<br/>(Export-Kennung + Pfad als Zusatzdaten)<br/>opake Dateinamen"]
         UPL["Upload, nur ausgehend<br/>Token: nur diese Seite, nur schreiben"]
         TG["Telegram-Meldung<br/>(Gegenprobe; Fehlschlag des Uploads)"]
     end
     subgraph PROVIDER["Hosting-Anbieter"]
         EDGE["Anmeldung an der Kante<br/>Identitätsanbieter, Authenticator-App/Passkey<br/>Sitzung 24 h"]
-        SITE["Statische Seite: Oberfläche (Klartext)<br/>+ Datenbaum (Chiffrat)"]
+        SITE["Statische Seite: Oberfläche (Zero-Knowledge-Build)<br/>+ Datenbaum (Chiffrat, opake Namen)"]
     end
     subgraph DEVICE["Beliebiges Gerät"]
         BROWSER["Browser: Passphrase → Schlüssel (WebCrypto)<br/>entschlüsseln, dekomprimieren, anzeigen<br/>Stand aus dem Manifest sichtbar"]
