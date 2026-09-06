@@ -78,7 +78,8 @@ lesende Datenbankrolle, Host-Header-Prüfung, abgeschaltete
 API-Dokumentation, Sicherheits-Header, Logging mit Schwärzung auch im
 Webprozess, Zugriffsprotokoll in Datei, Lastbegrenzung, eigene Umgebung mit
 nur einem Geheimnis. Der Notausschalter ist die Sperre des Server-Knotens
-im Koordinationsdienst — von jedem Gerät aus, sofort.
+im Koordinationsdienst — von jedem Gerät aus; neue Verbindungen sofort,
+bestehende binnen einer im PoC gemessenen Frist.
 
 **Zweite Wahl:** ein Identity-Aware Proxy mit ausgehendem Tunnel. Gleiche
 Grundidee ohne eingehende Freigabe, aber mit öffentlichem Hostnamen und
@@ -134,10 +135,10 @@ Dienst registriert. Was fehlt, steht als offene Frage in Abschnitt 10.
 | `/docs`, `/redoc` und `/openapi.json` sind eingeschaltet (FastAPI-Voreinstellung; die Anwendung schaltet nichts ab) | `presentation/api/app.py`, Doc 11, Abschnitt OpenAPI |
 | Der Bootstrap der Web-Anwendung baut **keinen** Anbieter; einzige Ausnahme ist der Kerzenlieferant für den Chart, fest auf `stored` — der Webdienst erreicht die TWS nie | `bootstrap.py`, `build_app()`; `presentation/api/dependencies.py` |
 | Der Webprozess lädt beim Start die **gesamte** `.env` in `Secrets` (alle Felder optional, benötigt wird nur `database_url`); alle gesetzten Werte werden zur Schwärzung angemeldet | `config/settings.py`, `Secrets`; [ADR 0044](../adr/0044-geheimnisse-an-der-log-senke-schwaerzen.md) |
-| **Die Schwärzung wirkt im Webprozess nicht.** `configure_logging()` — JSON auf `stdout`, Schwärzung an der Senke — wird ausschließlich vom CLI aufgerufen; `main.py` und `build_app()` konfigurieren kein Logging. Der Webprozess läuft mit uvicorns Standardprotokoll (Klartext), und die Anmeldung der Geheimnisse in `Secrets` ist dort ohne den Formatter wirkungslos | `cli.py` (einzige Aufrufer von `configure_logging`), `main.py`, `bootstrap.py` (`build_app`), `observability/logging_setup.py` |
+| **Die Schwärzung wirkt im Webprozess nicht.** `configure_logging()` — die Formatter mit Schwärzung an der Senke — wird ausschließlich vom CLI aufgerufen; `main.py` und `build_app()` konfigurieren kein Logging. `uvicorn` wendet seine Standard-Logkonfiguration schon beim Aufbau der `Config` an, vor dem Import der Anwendung: `uvicorn` und `uvicorn.access` schreiben Klartext über eigene Handler, der Root-Logger bleibt ohne Handler — Meldungen der Anwendung unterhalb `WARNING` gehen verloren, darüber landen sie ungeschwärzt auf `stderr`. Die Anmeldung der Geheimnisse in `Secrets` ist dort ohne den Formatter wirkungslos | `cli.py` (einzige Aufrufer von `configure_logging`), `main.py`, `bootstrap.py` (`build_app`), `observability/logging_setup.py` |
 | `ATA_SESSION_SECRET` ist reserviert und ohne Wirkung | `config/settings.py`, [ADR 0049](../adr/0049-dashboard-mvp-nur-lan.md), [ADR 0053](../adr/0053-lese-api-kein-lauf-ueber-http.md) |
 | Fehlerstruktur: FastAPI-Standard (`404`, `422`, `500`); Paginierung gedeckelt (`limit` ≤ 100); der Chart-Endpunkt liefert die **ganze** gespeicherte Reihe | Doc 11 |
-| Logging des CLI: JSON auf `stdout`, Level `INFO`, Schwärzung an der Senke | `config/default.yaml` (`logging`), `observability/logging_setup.py`, ADR 0044 |
+| Logging des CLI: Konsolenformat auf `stdout`, Level `INFO`, Schwärzung an der Senke — jeder CLI-Befehl übergibt `format="console"` fest; der `logging`-Block in `config/default.yaml` (`format: json`) hat derzeit keinen Leser | `cli.py`, `observability/logging_setup.py`, `config/default.yaml`, ADR 0044 |
 
 **Auslieferung und Betrieb (Sollzustand laut Doc 14, Stufe J — noch nicht eingerichtet)**
 
@@ -404,7 +405,7 @@ Gegenmaßnahmen verweisen auf Abschnitt 8.
 | T12 | Fehlkonfiguration von TLS, Proxy, Firewall, Tunnel, Regel | SG2, SG5 | Falsches Firewall-Profil, `0.0.0.0` ohne Regel, Tunnel ohne Token-Prüfung am Ursprung, abgelaufenes Zertifikat, zu weite Zugriffsregel, Server als Quelle erlaubt | mittel | hoch | Wenige Stellschrauben (Variante ohne eigene TLS-Endstelle); Firewall als zweite Ebene, die eine zu weite Regel auffängt (8.1); Abnahmekriterien mit Negativtests (11.3); regelmäßige Prüfung von außen (13) |
 | T13 | Kompromittiertes oder entwendetes Endgerät | SG7, SG5, SG6 | Registriertes Gerät in fremder Hand: liest, was der Nutzer liest, kann den Dienst mit Anfragen belasten (T11) und hält die Sitzung der Anbieterkonsole | entfällt | mittel | Schaden auf Lesen und Last begrenzt (P2, 8.2); Sperre je Gerät binnen gemessener Zeit (8.1, 12); Gerätesperre und Verschlüsselung auf den Geräten (Nutzerpflicht); Konsolensitzung kurz halten (8.1); Entscheidungspunkt Anmeldung im Dienst (10, E3) |
 | T14 | Protokollierung sensibler Daten | SG3, SG5 | Der Webprozess protokolliert heute **ohne Schwärzung** (2.1): eine Datenbank-URL in einem Fehlertext stünde im Klartext; Tokens in URLs; Anbieterprotokolle mit Klartext (V2) | **mittel** | mittel | Logging mit Schwärzung auch im Webprozess (8.2, 8.6); keine Anfrageinhalte im Protokoll — es gibt nur `GET`; Anbieter, der Inhalte nicht sieht (8.1); Protokoll in Datei mit Rotation und Zugriffsrechten (8.6) |
-| T15 | Drittanbieter und Cloud: Ausfall, Kontosperre, Bedingungen, Einblick | SG7, SG5, SG6 | Ausfall oder Kontosperre beim Koordinations-, Tunnel- oder Identitätsanbieter; geänderte Bedingungen; ein Anbieter, der Inhalte sieht (V2) | entfällt | je Variante | Ende-zu-Ende-Verschlüsselung (Anbieter sieht keine Inhalte); Wiederherstellungscodes offline; Ausfall kostet nur den Fernzugang; Nutzungsbedingungen vor der Wahl prüfen (8.1, 9) |
+| T15 | Drittanbieter und Cloud: Ausfall, Kontosperre, Bedingungen, Einblick | SG7, SG5, SG6 | Ausfall oder Kontosperre beim Koordinations-, Tunnel- oder Identitätsanbieter; geänderte Bedingungen; ein Anbieter, der Inhalte sieht (V2) | entfällt | je Variante | Ende-zu-Ende-Verschlüsselung (Anbieter sieht keine Inhalte); Wiederherstellungscodes offline; Ausfall kostet nur den Fernzugang; Nutzungsbedingungen vor der Wahl prüfen (8.1, 11.1) |
 | T16 | Lieferkette der Agent-Software | SG2 | Ein Agent mit Systemrechten, vom Anbieter aktualisiert | entfällt | je Variante | Signierte Installationspakete, Auto-Update, Anbieter mit veröffentlichtem Sicherheitsprozess; keine Alternative ohne vergleichbare Komponente (jeder VPN-Client ist eine) |
 | T17 | Geheimnisse im Klartext auf dem Host | SG3 | `.env` im Projektordner, lesbar für jeden Prozess unter demselben Konto; `pgpass.conf`; keine Sicherung der `.env` | mittel | mittel | Eigene Umgebung für den Dashboard-Prozess (8.4); NTFS-Rechte; Wiederherstellung dokumentieren (8.7) |
 | T18 | Offenlegung über das öffentliche Repository und öffentliche Verzeichnisse | SG2 | Betriebsanleitung, Pfade, Ports sind bekannt; Hostnamen, Adressen, Kontonamen dürfen nie hinzukommen; Zertifikate für Overlay-Namen landen in öffentlichen Transparenzprotokollen (8.3) | mittel | hoch | Regel P6 in jedem Dokument; nichtssagende Knoten- und Netznamen (8.3); PoC-Ergebnisse ohne identifizierende Angaben festhalten |
@@ -457,8 +458,9 @@ vom Router auf diesen Port.
 ### V1c — Identitätsgebundenes Overlay-Netz
 
 Ein WireGuard-basiertes Mesh mit Koordinationsdienst (beispielhaft:
-Tailscale, NetBird, ZeroTier; selbst gehostete Koordination: Headscale,
-NetBird selbst gehostet). Jeder Knoten — Server, Smartphone, Notebook —
+Tailscale, NetBird; selbst gehostete Koordination: Headscale, NetBird
+selbst gehostet. ZeroTier ist ein verwandtes, aber nicht WireGuard-basiertes
+Modell, das auf fremde Kontaktversuche antwortet — es fällt hier heraus). Jeder Knoten — Server, Smartphone, Notebook —
 meldet sich über einen **Identitätsanbieter** an (beispielhaft ein
 bestehendes Google-, Microsoft-, Apple- oder GitHub-Konto mit Passkey oder
 Hardware-Schlüssel), erhält einen eigenen, ablaufenden Geräteschlüssel und
@@ -469,11 +471,18 @@ des Anbieters übernehmen den Weg — verschlüsselt Ende zu Ende, das Relais
 sieht nur Chiffrat.
 
 - Eingehend: keine Freigabe am Router, keine am Server. Genauer: Der Agent
-  lauscht auf einem UDP-Port an allen Schnittstellen — sein Installer legt
-  dafür eine Firewallregel an — und antwortet **nur** auf gültige
-  Handshakes registrierter Schlüssel; unauthentifizierte Pakete bleiben
-  unbeantwortet. Er versucht außerdem standardmäßig eine Portzuordnung am
-  Router per UPnP oder NAT-PMP; die wird abgeschaltet (8.1).
+  lauscht auf einem UDP-Port an allen Schnittstellen — sein Dienst legt
+  dafür beim Start eine programmbezogene Firewallregel an — und antwortet
+  **nur** auf gültige Handshakes registrierter Schlüssel; unauthentifizierte
+  Pakete bleiben unbeantwortet (für WireGuard belegt; für andere
+  Protokollstapel misst es N7). Je nach Anbieter versucht er standardmäßig
+  eine Portzuordnung am Router per UPnP, NAT-PMP oder PCP; die wird
+  abgeschaltet (8.1) — nicht immer als gewöhnliche Client-Option, teils nur
+  über eine Dienst-Einstellung oder ein Richtlinienattribut. Und: Der
+  Windows-Client stuft sein Overlay-Netz als **privat** ein; die
+  Standardregeln des privaten Profils gelten damit auch auf der
+  Overlay-Schnittstelle — die Blockregel aus 8.1 Punkt 6 ist deshalb
+  Pflicht, kein Prüfpunkt.
 - Identität: Identitätsanbieter mit MFA **plus** Geräteschlüssel
   (Besitzfaktor je Gerät). Zugriffsregel: nur benannte Geräte des Nutzers,
   nur Port des Dashboards. Ein nicht registriertes Gerät erhält keine
@@ -482,16 +491,21 @@ sieht nur Chiffrat.
   Rückfall zu (8.1).
 - **Vertrauensanker ist der Koordinationsdienst.** Er verteilt Schlüssel
   **und** Regeln. Ohne Knotensignierung könnte ein kompromittierter Dienst
-  einen fremden Knoten einschleusen und die Regel weiten (T20). Mehrere
-  Anbieter bieten die Signierung neuer Knoten durch bestehende Knoten des
-  Nutzers an; sie ist hier Bedingung, nicht Empfehlung — und die
-  Windows-Firewall bleibt als zweite, anbieterunabhängige Ebene (8.1).
+  einen fremden Knoten einschleusen und die Regel weiten (T20). Die
+  Signierung neuer Knoten durch bestehende Knoten des Nutzers ist nach
+  heutigem Stand nur von **einem** Anbieter bekannt (Tailscale, „Tailnet
+  Lock"); für NetBird, Headscale und andere ist kein Äquivalent bekannt.
+  Das K.-o.-Kriterium engt die Wahl damit faktisch auf diesen Anbieter
+  oder auf Selbsthosting ein — das steht hier offen da. Die Signierung
+  deckt Knotenschlüssel ab, **nicht** die Zugriffsregel: Eine geweitete
+  Regel bleibt möglich, und genau dafür bleibt die Windows-Firewall als
+  zweite, anbieterunabhängige Ebene (8.1).
 - Auf dem Server: der Agent als Windows-Dienst (Systemrechte, vom Anbieter
   aktualisiert); der Dashboard-Dienst bindet an Loopback und
   Overlay-Schnittstelle; Firewallregel für den Dashboard-Port nur auf der
   Overlay-Schnittstelle, alles Übrige dort verworfen.
 - TLS: Der Tunnel ist authentifiziert und verschlüsselt (Noise-Protokoll);
-  innerhalb des Tunnels läuft HTTP. Mehrere Anbieter stellen zusätzlich
+  innerhalb des Tunnels läuft HTTP. Mindestens ein Anbieter stellt zusätzlich
   Zertifikate für den Overlay-Namen des Knotens aus, dann läuft HTTPS im
   Tunnel — zum Preis eines öffentlich nachlesbaren Namens (8.3).
 - Notausschalter: Server-Knoten im Koordinationsdienst sperren oder
@@ -729,15 +743,21 @@ scheiden aus; V3b erst bei Ausschluss jedes Koordinationsdienstes.
    Ziel, nicht Quelle.
 5. **Knotensignierung ist K.-o.-Kriterium.** Der Koordinationsdienst allein
    darf keinen Knoten in das Netz bringen können: Neue Knoten müssen von
-   einem bestehenden Knoten des Nutzers signiert werden (mehrere Anbieter
-   bieten das; sonst selbst gehostete Koordination, E4). Ohne diese
-   Eigenschaft wäre der Anbieter nicht Mitwisser, sondern möglicher
-   Endpunkt (T20) — und der PoC bestünde trotzdem.
+   einem bestehenden Knoten des Nutzers signiert werden (nach heutigem
+   Stand bietet das ein Anbieter; sonst selbst gehostete Koordination,
+   E4). Ohne diese Eigenschaft wäre der Anbieter nicht Mitwisser, sondern
+   möglicher Endpunkt (T20); deshalb wird sie bei der Anbieterwahl geprüft
+   (11.1 Schritt 2) und im PoC nachgewiesen (AK5). Die Signierung schützt
+   Knotenschlüssel, nicht die Regel; ob ein Smartphone als Signierknoten
+   taugt, klärt der PoC. Sie bringt ein zweites Notfallgeheimnis mit — den
+   Schlüssel, mit dem sich die Signierpflicht im Notfall aufheben lässt —,
+   das wie die Wiederherstellungscodes offline liegt (8.7).
 6. **Die Windows-Firewall ist die zweite, anbieterunabhängige Ebene.** Auf
    der Overlay-Schnittstelle eingehend: nur der Dashboard-Port, alles
-   Übrige verwerfen. Das Netzwerkprofil der Overlay-Schnittstelle wird
-   geprüft — die Standardregeln für RDP, SMB, WinRM und Dateifreigabe
-   dürfen dort nicht greifen. Damit endet auch eine beim Anbieter
+   Übrige verwerfen. Der Windows-Client stuft sein Overlay-Netz als privat
+   ein; die Standardregeln des privaten Profils für RDP, SMB, WinRM und
+   Dateifreigabe gälten damit auch dort — die Blockregel je Schnittstelle
+   ist deshalb Pflicht, kein Prüfpunkt. Damit endet auch eine beim Anbieter
    geweitete Regel am Dashboard (N16).
 7. **Der Server verbindet nur nach außen** — zum Koordinationsdienst und
    zu Relais; jede Antwort auf ein eingehendes Paket setzt einen gültigen
@@ -754,7 +774,9 @@ scheiden aus; V3b erst bei Ausschluss jedes Koordinationsdienstes.
   die der PoC vergleicht: (a) zwei Prozesse, einer an `127.0.0.1`, einer
   an der Overlay-Adresse; (b) ein Prozess mit zwei vorbereiteten Sockets
   über `uvicorn.Server.serve(sockets=[…])` — die Kommandozeile kennt je
-  Aufruf nur eine Adresse, die Programmschnittstelle mehrere; (c) Bindung
+  Aufruf nur eine Adresse, die Programmschnittstelle mehrere; das ist
+  kein dokumentiertes API (für den Betrieb unter Gunicorn gedacht) und
+  braucht ein eigenes Startskript mit `Config(...)`; (c) Bindung
   an `0.0.0.0` mit einer Firewallregel, die eingehend nur die
   Overlay-Schnittstelle zulässt und alles Übrige für den Port blockt. Die
   Bindung an die Overlay-Adresse hat eine Fußangel: Sie existiert erst,
@@ -765,8 +787,11 @@ scheiden aus; V3b erst bei Ausschluss jedes Koordinationsdienstes.
   Overlays). Keine Regel für Port 8000 im LAN. Dazu die Blockregel aus 8.1
   Punkt 6 für alles Übrige auf der Overlay-Schnittstelle.
 - **Host-Prüfung.** `TrustedHostMiddleware` mit Overlay-Name,
-  Overlay-Adresse und Loopback als einzigen zulässigen Werten; alles
-  andere `400`. Das ist der Schutz gegen DNS-Rebinding (T19) — mit HTTPS im
+  IPv4-Overlay-Adresse, `127.0.0.1` und `localhost` als einzigen
+  zulässigen Werten, ohne Platzhalter, `www_redirect=False`; alles andere
+  `400`. IPv6-Literale bleiben bewusst draußen — die Middleware trennt den
+  Host am ersten Doppelpunkt und kann `[…]`-Schreibweisen nicht sauber
+  zulassen. Das ist der Schutz gegen DNS-Rebinding (T19) — mit HTTPS im
   Tunnel doppelt.
 - **API-Dokumentation aus.** `docs_url=None`, `redoc_url=None`,
   `openapi_url=None` außerhalb der Entwicklung — sie beschreiben die
@@ -807,9 +832,10 @@ DNS-Rebinding umgebogener Name scheitert am Zertifikat (T19), und S3 ist
 wörtlich erfüllt.
 
 **Der Preis ist ein auffindbarer Name.** Diese Zertifikate kommen von
-öffentlichen Zertifizierungsstellen; Knoten- und Netzname landen damit in
-den öffentlichen Transparenzprotokollen, und für den Nachweis legen die
-Anbieter öffentliche DNS-Einträge auf die Overlay-Adresse. Die Adresse ist
+öffentlichen Zertifizierungsstellen (ACME, Nachweis über einen
+`_acme-challenge`-TXT-Eintrag); Knoten- und Netzname landen damit in den
+öffentlichen Transparenzprotokollen, und für die Namensauflösung legt der
+Anbieter öffentliche Adresseinträge auf die Overlay-Adresse. Die Adresse ist
 von außen unerreichbar, der Name aber lesbar (T18). Deshalb: Knoten- und
 Netznamen **nichtssagend** wählen — nichts mit „trading", „tws" oder dem
 Projektnamen —, und im PoC-Protokoll keinen davon nennen. Gibt der
@@ -911,6 +937,9 @@ Fernzugang nicht berührt. Neu zu dokumentieren:
   einer Sicherung.
 - **Wiederherstellungscodes des Identitätsanbieters** offline. Verlust des
   Kontos heißt Verlust des Fernzugangs — nicht des Systems.
+- **Das Notfallgeheimnis der Knotensignierung** ebenfalls offline: Gehen
+  alle Signierknoten verloren, lässt sich die Signierpflicht nur damit
+  aufheben — sonst sperrt das Netz sich selbst.
 - **Die `.env` wird weiterhin nicht mitgesichert** (Doc 13). Das ist eine
   bewusste Lücke, die mit dem Fernzugang nicht größer wird, aber
   dokumentiert gehört: Was nach einem Plattenverlust neu zu erzeugen ist,
@@ -978,7 +1007,7 @@ Fernzugang nicht berührt. Neu zu dokumentieren:
 | E1 | LAN-Freigabe (Doc 14 Stufe J, Schritt 4) neben dem Overlay behalten? | **Nein** — ein Weg; das Tablet wird Knoten |
 | E2 | HTTPS im Tunnel, wenn der Anbieter Zertifikate ausstellt — zum Preis eines über Transparenzprotokolle auffindbaren Namens (8.3)? | **Ja**, mit nichtssagenden Knoten- und Netznamen; die Host-Prüfung im Dienst kommt in jedem Fall |
 | E3 | Zusätzliche Anmeldung im Dienst (Passkey) gegen R1? | **Nicht in Stufe 2**; Pflicht in Stufe 3 |
-| E4 | Koordinationsdienst des Anbieters (mit Knotensignierung) oder selbst gehostet? | **Anbieter mit Knotensignierung** für den PoC; Selbsthosting nur bei Ausschluss jedes Drittanbieters |
+| E4 | Koordinationsdienst des Anbieters (mit Knotensignierung) oder selbst gehostet? | **Anbieter mit Knotensignierung** für den PoC (nach heutigem Stand einer); Selbsthosting nur bei Ausschluss jedes Drittanbieters |
 | E5 | Fernwartung (O2) ebenfalls auf das Overlay umstellen? | **Ja**, falls heute ein Port dafür offen ist — mit eigener, enger Regel |
 | E6 | Eigener Host für das Dashboard schon in Stufe 2? | **Nein** — Bedingung für Stufe 3; Ergebnis von 11.4 abwarten |
 
@@ -995,11 +1024,16 @@ Abbruchkriterien — wie Doc 14.
 1. O1 bis O12 beantworten und die Antworten **außerhalb des Repositories**
    festhalten (P6).
 2. Anbieter für den PoC wählen: Knotensignierung durch bestehende Knoten
-   muss er bieten (8.1 Punkt 5); Nutzungsbedingungen der persönlichen
+   muss er bieten (8.1 Punkt 5) — nach heutigem Stand einer, alternativ
+   Selbsthosting (E4); Nutzungsbedingungen der persönlichen
    Stufe lesen (Gerätezahl, Nutzung, Datenverarbeitung, Kündigung).
    Ergebnis ohne identifizierende Angaben im PoC-Protokoll.
 3. Konto beim Identitätsanbieter auf Passkey oder Hardware-Schlüssel
-   **allein** stellen — schwächere Faktoren abschalten (8.1 Punkt 2);
+   **allein** stellen — schwächere Faktoren abschalten (8.1 Punkt 2).
+   Lässt sich das Konto nicht darauf beschränken — bei einigen
+   Konsumentenanbietern ist das nicht möglich —, ist ein anderes Konto zu
+   wählen oder ein Overlay-Anbieter mit eigener Passkey-Anmeldung ohne
+   externen Identitätsanbieter; sonst wird der PoC nicht begonnen (O9).
    Wiederherstellungscodes offline ablegen.
 4. Testgeräte benennen: ein Smartphone (Mobilfunk, WLAN aus), ein
    Notebook, ein **nicht** zu registrierendes Gerät für Negativtests.
@@ -1034,7 +1068,8 @@ müsste. Dann ist die Regel oder die Bindung falsch — nicht der Server.
 2. **Datenbank** `ata_poc` auf dem Server, Leserolle, Fixture-Befüllung wie
    in Phase 1. Die Produktivdatenbank wird **nicht** angebunden.
 3. **Agent** auf dem Server als Dienst, Portzuordnung aus; Knoten
-   freigeben und von einem Testgerät signieren; Regel „Testgeräte →
+   freigeben und von einem Testgerät signieren (ob ein Smartphone als
+   Signierknoten taugt, klärt dieser Schritt); Regel „Testgeräte →
    Server, nur Port 8001". Der Server-Knoten ist Ziel, nicht Quelle.
 4. **Firewall**: Regel für 8001 nur auf der Overlay-Schnittstelle; alles
    Übrige dort eingehend verwerfen; Netzwerkprofil der Overlay-Schnittstelle
@@ -1089,19 +1124,30 @@ müsste. Dann ist die Regel oder die Bindung falsch — nicht der Server.
 | N13 | Ein registriertes Gerät wird **während einer offenen Verbindung** gesperrt oder gelöscht | Verbindung bricht binnen gemessener Zeit ab; keine neue Verbindung (AK19) |
 | N14 | Anfrage mit fremdem `Host`-Header (etwa dem Namen eines Angreifers) an die Overlay-Adresse | `400` — kein Inhalt (Schutz gegen DNS-Rebinding, T19) |
 | N15 | Anmeldung beim Identitätsanbieter mit Passwort plus SMS oder TOTP statt Passkey | nicht möglich (AK3) |
-| N16 | Die Regel beim Anbieter wird **testweise** für ein Testgerät auf alle Ports des Servers geweitet | 3389, 5432 und 7496 scheitern trotzdem — an der Windows-Firewall auf der Overlay-Schnittstelle (8.1 Punkt 6); danach Regel zurücksetzen und N4 wiederholen |
+| N16 | Die Regel beim Anbieter wird **testweise** für ein Testgerät auf alle Ports des Servers geweitet; dazu lauscht eine zweite Testinstanz ohne Freigabe absichtlich auf allen Schnittstellen (Port 8002) | 8002 scheitert — nachweislich an der Windows-Firewall auf der Overlay-Schnittstelle (8.1 Punkt 6), nicht an einer Bindung; 5432 und 7496 scheitern ohnehin an der Loopback-Bindung (AK16), 3389 nur aussagekräftig, wenn dort etwas lauscht (O2); danach Regel zurücksetzen, Testinstanz beenden, N4 wiederholen |
 
 ### 11.4 Messung: Loopback-Grenze
 
-Erwartetes Ergebnis: **keine Trennung** — die Windows-Firewall filtert
-Loopback-Verkehr nicht. Die Messung bestätigt das und hält es fest:
+Erwartetes Ergebnis: **keine Trennung** — die eingebaute Windows-Firewall
+filtert Loopback-Verkehr nicht (Callout-Treiber von Drittprodukten
+könnten es; hier läuft keiner). Die Messung bestätigt das und hält es
+fest — mit einer Positivkontrolle, damit „keine Trennung" nicht heißt,
+die Regel hätte gar nicht gegriffen:
 
-- Unter dem Dienstkonto, mit einer ausgehenden Blockregel `-LocalUser`
-  für Port 7496 (und zur Messung 5432; die Testinstanz braucht ihn):
-  `Test-NetConnection 127.0.0.1 -Port 7496` — kommt die Verbindung
-  trotz Regel zustande? Ergebnis ohne Deutung protokollieren.
-- Dieselbe Probe mit einer Regel, die nur das Dienstkonto trifft, während
-  das Administrator-Konto weiter verbindet.
+1. Ausgehende Blockregel für Port 7496 (und zur Messung 5432; die
+   Testinstanz braucht ihn), beschränkt auf das Dienstkonto per
+   `-LocalUser` — der Parameter erwartet einen SDDL-String, keinen
+   Kontonamen; falsch angegeben ist die Regel formal wirkungslos.
+2. **Positivkontrolle:** dieselbe Regel gegen ein Ziel außerhalb von
+   Loopback (etwa die LAN-Adresse des Servers oder ein zweites Gerät auf
+   Port 7496) unter dem Dienstkonto — die Verbindung **muss** blockiert
+   werden. Andernfalls greift die Regel nicht, und der Loopback-Befund
+   wäre wertlos.
+3. Die Probe im Sicherheitskontext des Dienstkontos ausführen (Aufgabe
+   unter dem Konto oder `runas`), nicht aus einer Administrator-Shell:
+   `Test-NetConnection 127.0.0.1 -Port 7496` — kommt die Verbindung trotz
+   Regel zustande? Ergebnis ohne Deutung protokollieren.
+4. Gegenprobe: dieselbe Regel, das Administrator-Konto verbindet weiter.
 
 Das Ergebnis hält fest, was ein Dienstkonto auf Windows trennt — Dateien,
 Aufgaben, Datenbankrechte — und was nicht: die TWS. Beides ist ein
@@ -1138,7 +1184,7 @@ Trennung zustande, wäre sie ein Gewinn und in Doc 14 festzuhalten.
 | RB4 | Datenbank `ata_poc` und Leserolle löschen | `psql -l` ohne `ata_poc` |
 | RB5 | Dienstkonto löschen (oder für Stufe 2 behalten — dann dokumentiert) | Benutzerverwaltung |
 | RB6 | Protokollordner löschen | — |
-| RB7 | Wiederherstellungscodes und Kontoeinstellungen bleiben — sie gehören dem Inhaber, nicht dem PoC | — |
+| RB7 | Wiederherstellungscodes, das Notfallgeheimnis der Knotensignierung und Kontoeinstellungen bleiben — sie gehören dem Inhaber, nicht dem PoC | — |
 | RB8 | Prüfung von außen (11.5) wiederholen | Zustand wie vor dem PoC |
 
 ### 11.7 Ergebnis des PoC
@@ -1154,14 +1200,16 @@ Abnahme in Doc 14.
 
 ## 12. Rückbau- und Notfallmaßnahmen (Notausschalter)
 
-Drei Ebenen, unabhängig voneinander; die erste genügt, die übrigen sind
-Rückversicherung. Reihenfolge nach Geschwindigkeit:
+Drei Ebenen (K1–K3), unabhängig voneinander; die erste genügt, die
+übrigen sind Rückversicherung. K1b ist der Gerätefall, K4 gilt bei
+Verdacht auf ein kompromittiertes Gerät, K5 ist der Rückbau. Reihenfolge
+nach Geschwindigkeit:
 
 | # | Ebene | Handgriff | Wirkt | Von wo | Prüfung |
 |---|---|---|---|---|---|
 | K1 | Koordinationsdienst — Server | Server-Knoten sperren (Schlüssel ablaufen lassen oder Knoten löschen) | neue Verbindungen sofort; bestehende binnen der Frist, in der der Server die neue Peer-Liste erhält — **im PoC messen** (AK18) | jedes Gerät mit Zugang zur Konsole | Aufruf vom Smartphone scheitert (N11) |
 | K1b | Koordinationsdienst — einzelnes Gerät | Gerät sperren oder löschen (verlorenes Telefon) | wie K1, gemessen in AK19 | jedes andere Gerät mit Zugang zur Konsole | N13 |
-| K2 | Server, Dienst | Overlay-Agent-Dienst anhalten; Autostart-Aufgabe des Dashboards beenden und deaktivieren | sofort | Server (Konsole oder Fernwartung nach E5) | `Get-Service`, `Get-ScheduledTask`, `Get-NetTCPConnection` ohne 8000 |
+| K2 | Server, Dienst | Overlay-Agent-Dienst anhalten; Autostart-Aufgabe des Dashboards beenden und deaktivieren | sofort | Server (Konsole oder Fernwartung nach E5) | `Get-Service`, `Get-ScheduledTask`, `Get-NetTCPConnection` ohne den Dashboard-Port |
 | K3 | Server, Firewall | Firewallregel des Dashboards löschen | sofort | Server | `Get-NetFirewallRule` ohne Treffer |
 | K4 | Identitätsanbieter | Sitzungen aller Geräte und der Anbieterkonsole beenden, Passkey neu setzen — bei Verdacht auf ein kompromittiertes Gerät | sofort | jedes Gerät | Geräte müssen sich neu anmelden |
 | K5 | Rückbau vollständig | Abschnitt 11.6 | — | Server | Zustand wie vor der Einrichtung |

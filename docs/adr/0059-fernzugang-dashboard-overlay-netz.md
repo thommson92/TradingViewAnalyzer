@@ -75,6 +75,11 @@ Bewertung steht im Spike-Bericht, Abschnitte 6 und 7.
    Faktoren zulässt (Passkey oder Hardware-Schlüssel; Passwort-, SMS- und
    TOTP-Rückfall abgeschaltet, Wiederherstellung nur über offline
    verwahrte Codes), und erhält einen eigenen, ablaufenden Geräteschlüssel.
+   Ob ein solches Konto verfügbar ist, ist die offene Frage O9 des
+   Spike-Berichts: Einige Konsumentenanbieter lassen sich nicht auf
+   Passkeys allein stellen; dann ist ein anderes Konto zu wählen oder ein
+   Overlay-Anbieter mit eigener Passkey-Anmeldung ohne externen
+   Identitätsanbieter — andernfalls beginnt der PoC nicht.
    Eine Zugriffsregel erlaubt **nur diesen Geräten** den Port des
    Dashboards auf dem Server; alles Übrige ist verweigert. Ein Gerät, das
    nicht registriert ist, erreicht nicht einmal einen Anmeldedialog.
@@ -82,16 +87,22 @@ Bewertung steht im Spike-Bericht, Abschnitte 6 und 7.
    verteilt Schlüssel **und** Regeln; ein kompromittierter Dienst könnte
    sonst einen fremden Knoten einschleusen und die Regel weiten. Deshalb
    gilt als K.-o.-Kriterium für den Anbieter: **Signierung neuer Knoten
-   durch einen bestehenden Knoten des Nutzers** (mehrere Anbieter bieten
-   das an; alternativ selbst gehostete Koordination). Und als
+   durch einen bestehenden Knoten des Nutzers** (nach heutigem Stand
+   bietet das ein Anbieter; alternativ selbst gehostete Koordination — die
+   Wahl ist damit eng, und das steht hier offen da). Die Signierung deckt
+   Knotenschlüssel ab, nicht die Zugriffsregel, und sie bringt ein
+   Notfallgeheimnis mit, das offline verwahrt wird. Und als
    anbieterunabhängige zweite Ebene verwirft die **Windows-Firewall auf
    der Overlay-Schnittstelle eingehend alles außer dem Dashboard-Port**;
    die Standardregeln für RDP, SMB und WinRM dürfen dort nicht greifen.
    Selbst eine geweitete Regel beim Anbieter erreicht damit nichts
    anderes als das Dashboard.
 4. **Der Dienst bindet nicht mehr an alle Schnittstellen.** Er lauscht
-   auf der Loopback- und der Overlay-Schnittstelle; die Firewallregel
-   für den Dashboard-Port gilt nur für die Overlay-Schnittstelle. Die
+   auf der Loopback- und der Overlay-Schnittstelle — oder, wenn der PoC
+   das als nicht tragfähig erweist, an allen Schnittstellen mit einer
+   Firewallregel, die den Port nur auf der Overlay-Schnittstelle zulässt
+   (Spike-Bericht 8.2); die Firewallregel für den Dashboard-Port gilt in
+   jedem Fall nur für die Overlay-Schnittstelle. Die
    LAN-Freigabe im privaten Profil aus Doc 14, Stufe J, Schritt 4
    **entfällt**: Ein Weg statt zwei, und ein Tablet im heimischen WLAN
    nimmt denselben Weg wie das Smartphone unterwegs. Das **ersetzt**
@@ -100,10 +111,14 @@ Bewertung steht im Spike-Bericht, Abschnitte 6 und 7.
 5. **Der Dienst wird gehärtet, unabhängig vom Weg.** Eigenes lokales
    Dienstkonto ohne Administratorrechte für den Autostart-Eintrag; eigene
    PostgreSQL-Rolle mit ausschließlich Leserechten; Prüfung des
-   `Host`-Headers gegen Overlay-Name, Overlay-Adresse und Loopback
+   `Host`-Headers gegen Overlay-Name, IPv4-Overlay-Adresse und Loopback
    (Schutz gegen DNS-Rebinding aus dem Browser eines registrierten
-   Geräts); `/docs`, `/redoc` und `/openapi.json` außerhalb der
-   Entwicklung abgeschaltet; Sicherheits-Header (eine
+   Geräts); HTTPS innerhalb des Tunnels, wenn der Anbieter Zertifikate
+   für den Overlay-Namen ausstellt — sonst HTTP im Tunnel als
+   dokumentierte Ausnahme (Spike-Bericht 8.3, E2) —, mit nichtssagenden
+   Knoten- und Netznamen, weil solche Zertifikate in öffentlichen
+   Transparenzprotokollen stehen; `/docs`, `/redoc` und `/openapi.json`
+   außerhalb der Entwicklung abgeschaltet; Sicherheits-Header (eine
    `Content-Security-Policy` mit `frame-ancestors 'none'`,
    `X-Content-Type-Options`, `Referrer-Policy`); Logging **mit** der
    Schwärzung aus ADR 0044 auch im Webprozess, Zugriffsprotokoll in eine
@@ -131,13 +146,17 @@ Bewertung steht im Spike-Bericht, Abschnitte 6 und 7.
    Verbindungen sofort, für bestehende binnen einer im PoC gemessenen
    Frist; von jedem Gerät aus), Anhalten des Overlay-Dienstes und des
    Autostart-Eintrags auf dem Server, Löschen der Firewallregel. Die
-   Reihenfolge und die Prüfung, dass sie gewirkt haben, stehen in Doc 14.
-8. **Erst ein Proof of Concept, dann der Betrieb.** Der PoC läuft ohne
+   Reihenfolge und die Prüfung, dass sie gewirkt haben, stehen im
+   Spike-Bericht, Abschnitt 12, und werden mit Stufe 2 als Notfallkarte in
+   Doc 14 übernommen.
+8. **Erst ein Proof of Concept, dann der Betrieb.** Die Stufen folgen dem
+   Spike-Bericht, Abschnitt 8.5: Stufe 1 ist der PoC, Stufe 2 der lesende
+   Fernzugang, Stufe 3 wären Schreibpfade — nicht geplant. Der PoC läuft ohne
    Produktivdaten und ohne produktive Zugangsdaten: eigene Testinstanz auf
    eigenem Port, eigene Datenbank mit ausschließlich synthetischen Daten
    aus den Fixture-Anbietern, nur Testgeräte in der Zugriffsregel,
    vollständiger Rückbau. Die Abnahmekriterien und Negativtests stehen im
-   Spike-Bericht, Abschnitt 11 — darunter der Nachweis, dass eine
+   Spike-Bericht, Abschnitt 11.3 — darunter der Nachweis, dass eine
    testweise geweitete Anbieterregel an der Windows-Firewall scheitert,
    dass ein gesperrtes Gerät auch bei offener Verbindung binnen gemessener
    Zeit getrennt wird und dass die Anmeldung am Identitätsanbieter ohne
@@ -215,9 +234,11 @@ Anbieters kostet den Fernzugang, nicht den Tageslauf — der Dispatcher
 braucht das Overlay nicht, und die Telegram-Meldung bleibt; und die
 Alternative ist nicht „keine Abhängigkeit", sondern ein selbst
 betriebener Bastion-Server mit selbst betriebener Anmeldung — mehr
-Betrieb, gleiche Vertrauensfrage, anderer Anbieter. Wer den
-Koordinationsdienst nicht will, kann ihn selbst hosten; das ist ein
-eigener Betriebsaufwand und wird im PoC nicht verfolgt.
+Betrieb, gleiche Vertrauensfrage, anderer Anbieter. Dass die Knotensignierung nach heutigem Stand nur
+ein Anbieter bietet, macht die Wahl eng; das ist der Preis der Bedingung,
+nicht ein Grund, sie fallen zu lassen. Wer den Koordinationsdienst nicht
+will, kann ihn selbst hosten; das ist ein eigener Betriebsaufwand und wird
+im PoC nicht verfolgt.
 
 **Warum keine Anmeldung im Dienst, obwohl Doc 10 §13 sie auch für ein
 nicht öffentliches Dashboard verlangt:** Doc 10 §13 fordert „Login,
@@ -263,7 +284,9 @@ geführt; sie kehrt sich sicher um, sobald es einen Schreibpfad gibt
   Browser kommt nicht heran — das ist gewollt, aber unbequem.
 - **Sperre am Identitätsanbieter heißt kein Fernzugang.** Der
   Wiederherstellungsweg (Offline-Codes, zweiter Schlüssel) gehört
-  abgelegt, bevor der erste Knoten registriert wird. Die Sitzung der
+  abgelegt, bevor der erste Knoten registriert wird — ebenso das
+  Notfallgeheimnis der Knotensignierung, ohne das ein Verlust aller
+  Signierknoten das Netz sperrt. Die Sitzung der
   Anbieterkonsole auf dem Telefon ist selbst ein Schutzgut: Sie
   kontrolliert Notausschalter, Gerätefreigabe und Regeln.
 - **Ein Dienst mit Systemrechten mehr** auf dem Server (der Overlay-Agent),
@@ -272,9 +295,9 @@ geführt; sie kehrt sich sicher um, sobald es einen Schreibpfad gibt
   Ablauffristen der Geräteschlüssel.
 - **HTTPS im Tunnel hat einen Preis:** Zertifikate für Overlay-Namen
   kommen von öffentlichen Zertifizierungsstellen, und die Namen landen in
-  öffentlichen Transparenzprotokollen; für den Nachweis legen Anbieter
-  öffentliche DNS-Einträge auf die Overlay-Adresse. Der Name ist dann
-  auffindbar, die Adresse von außen unerreichbar. Knoten- und Netznamen
+  öffentlichen Transparenzprotokollen; für die Namensauflösung legt der
+  Anbieter öffentliche Adresseinträge auf die Overlay-Adresse. Der Name
+  ist dann auffindbar, die Adresse von außen unerreichbar. Knoten- und Netznamen
   sind deshalb nichtssagend zu wählen.
 - **Der Web-Stack wird erreichbar** — wenn auch nur für eigene Geräte.
   Meldungen aus `audit.yml` zu `uvicorn`, `starlette`, `fastapi` und `h11`
