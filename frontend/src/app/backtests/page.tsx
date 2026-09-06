@@ -203,7 +203,7 @@ export default function BacktestSeite(): ReactNode {
       {messungen !== null && messungen.length === 0 && (
         <p className="ohne-grundlage">
           Es liegt noch keine Messung vor. Der Optionsbacktest ist ein Handlauf:{' '}
-          <code>cli options-backtest</code>.
+          <code>python -m ai_trading_analyst.cli options-backtest --provider ibkr</code>.
         </p>
       )}
       {messungen !== null && messungen.length > 0 && (

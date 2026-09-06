@@ -1914,11 +1914,16 @@ def _print_verteilung(name: str, wert: Verteilung | None) -> None:
 def command_options_backtest(args: argparse.Namespace) -> int:
     """Simuliert je Episode den vorgeschlagenen Put-Verkauf (ADR 0058, Stufe 1).
 
-    Das Muster von ``options-calibrate``: messen, ausgeben, nichts ablegen.
-    Festlegung 9 sieht fuer die Ergebnisse eine eigene Tabelle vor -- sie
-    entsteht, wenn die Zahlen einmal angesehen sind. Ein Schema fuer Werte zu
-    entwerfen, die noch niemand gepruefte hat, waere genau die Reihenfolge,
-    vor der das ADR warnt.
+    Jeder Lauf legt eine eigene Messung ab (Festlegung 9): je Aktie eine
+    Zeile, eine ueber alle Aktien und die Einzeltrades, alle unter derselben
+    ``measurement_id``. Angehaengt, nie ueberschrieben -- zwei Laeufe mit
+    verschiedenem Volatilitaetsaufschlag sind zwei Befunde und nicht ein
+    korrigierter.
+
+    Braucht ``--provider ibkr`` (oder die entsprechende Konfiguration), baut
+    damit aber **keine** TWS-Verbindung auf: ``market_data.source`` wird hier
+    fest auf ``stored`` gesetzt. Der Anbieter entscheidet nur, welcher
+    Bestand gemeint ist.
 
     **Jede Zahl hier ist eine Modellzahl.** Die Praemie ist gerechnet, der
     Verfallskalender konstruiert, das Strike-Raster angenommen und der
@@ -4276,7 +4281,8 @@ def build_parser() -> argparse.ArgumentParser:
         "options-backtest",
         help=(
             "Simuliert je Episode den vorgeschlagenen Put-Verkauf (ADR 0058, "
-            "Stufe 1). Misst und gibt aus, legt nichts ab."
+            "Stufe 1). Legt die Messung ab: je Aktie eine Zeile, eine ueber "
+            "alle, dazu die Einzeltrades."
         ),
     )
     optionsbacktest.add_argument(
