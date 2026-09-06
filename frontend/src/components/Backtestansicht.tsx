@@ -137,8 +137,8 @@ export function Backtestansicht({
       {backtest.measurement === null || backtest.pooled === null ? (
         <p className="ohne-grundlage">
           Für diese Aktie liegt keine Messung vor. Der Optionsbacktest ist ein
-          Handlauf (<code>cli options-backtest</code>) und entsteht nicht im
-          Tageslauf.
+          Handlauf (<code>python -m ai_trading_analyst.cli options-backtest
+          --provider ibkr</code>) und entsteht nicht im Tageslauf.
         </p>
       ) : (
         <>
