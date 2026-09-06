@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from ai_trading_analyst import cli
 from ai_trading_analyst.domain.backtesting import (
     BacktestConfidence,
     BacktestResult,
@@ -255,6 +256,33 @@ def test_die_trade_tabelle_entsteht_mit_ihrem_eigenen_enumtyp(engine: Engine) ->
         "STOPPED_OUT",
         "CLOSED_AT_EXPIRATION",
     ]
+
+
+def test_die_vorabpruefung_erkennt_vorhandene_und_fehlende_tabellen(
+    engine: Engine, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Die Weiche vor dem Rechnen (``cli.py``).
+
+    Auf dem Server ist genau das passiert: Die Migration war nicht gelaufen,
+    der Optionsbacktest rechnete die ganze Watchliste durch, druckte das
+    Ergebnis und scheiterte erst am ``INSERT`` -- mit einem Traceback aus der
+    Tiefe von SQLAlchemy. Gemessen alles, abgelegt nichts.
+
+    Deshalb hier gegen die echte Datenbank und in beide Richtungen: Nach dem
+    Upgrade traegt sie, und eine erfundene Tabelle nennt sie beim Namen.
+    """
+    assert cli._tabellen_vorhanden(
+        engine, "options_backtest_results", "options_backtest_trades"
+    )
+
+    assert not cli._tabellen_vorhanden(engine, "options_backtest_results", "gibt_es_nicht")
+
+    meldung = capsys.readouterr().err
+    # Der fehlende Name gehoert in die Meldung, der vorhandene nicht: Sonst
+    # sucht der Leser an der falschen Stelle.
+    assert "gibt_es_nicht" in meldung
+    assert "options_backtest_results" not in meldung
+    assert "alembic upgrade head" in meldung
 
 
 def test_die_score_spalten_entstehen_durch_die_migration(engine: Engine) -> None:

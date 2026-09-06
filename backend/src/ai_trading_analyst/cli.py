@@ -42,6 +42,7 @@ from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import ArgumentError
 
@@ -195,6 +196,10 @@ from ai_trading_analyst.infrastructure.notifications import (
 )
 from ai_trading_analyst.infrastructure.persistence.dispatcher_runs import (
     SqlAlchemyDispatcherRunRepository,
+)
+from ai_trading_analyst.infrastructure.persistence.orm import (
+    OptionsBacktestResultOrm,
+    OptionsBacktestTradeOrm,
 )
 from ai_trading_analyst.infrastructure.persistence.session import (
     DatabaseUnavailableError,
@@ -458,6 +463,30 @@ def _open_database() -> Engine | None:
         return None
     _offene_engines.append(engine)
     return engine
+
+
+def _tabellen_vorhanden(engine: Engine, *namen: str) -> bool:
+    """Prueft vor dem Rechnen, ob die Zieltabellen der Migration da sind.
+
+    Der Optionsbacktest rechnet ueber die ganze Watchliste, druckt das
+    Ergebnis und schreibt erst danach. Fehlt die Migration, kostet das den
+    vollstaendigen Lauf und quittiert ihn mit einem Traceback aus der Tiefe
+    von SQLAlchemy -- vermessen wurde alles, abgelegt nichts.
+
+    Dieselbe Bauart wie ``_open_database``: ``False`` heisst, die Meldung
+    steht bereits, der Aufrufer bricht mit 2 ab.
+    """
+    fehlend = [name for name in namen if not sqlalchemy_inspect(engine).has_table(name)]
+    if not fehlend:
+        return True
+    print(
+        f"Fehlende Tabelle(n): {', '.join(fehlend)}.\n"
+        "Die Datenbank ist nicht auf dem Stand des Codes -- 'python -m alembic "
+        "upgrade head' im Verzeichnis 'backend' ausfuehren und den Lauf "
+        "wiederholen.",
+        file=sys.stderr,
+    )
+    return False
 
 
 def command_backfill(args: argparse.Namespace) -> int:
@@ -1958,6 +1987,14 @@ def command_options_backtest(args: argparse.Namespace) -> int:
 
     engine = _open_database()
     if engine is None:
+        return 2
+    # Vor dem Rechnen, nicht danach: Ein Lauf ueber die Watchliste dauert,
+    # und ohne die Migration waere er restlos umsonst.
+    if not _tabellen_vorhanden(
+        engine,
+        OptionsBacktestResultOrm.__tablename__,
+        OptionsBacktestTradeOrm.__tablename__,
+    ):
         return 2
     session_factory = build_session_factory(engine)
 
