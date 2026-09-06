@@ -93,6 +93,7 @@ entsteht ein neues ADR, das das alte ausdruecklich abloest.
 | [0056](0056-kaufsignale-und-zusatzkriterien.md) | Fünf Kriterien, drei müssen erfüllt sein — Signal B ohne Gap-up-Klausel | Angenommen (ersetzt die 2-aus-3-Regel und die Signal-B-Formel aus ADR 0010 sowie die Signal-Teilwerte aus ADR 0045; Cooldown-Aussage durch [0057](0057-torbedingungen-und-episoden.md) abgelöst) |
 | [0057](0057-torbedingungen-und-episoden.md) | Torbedingungen an der Entscheidungskerze, Episoden statt Cooldown | Angenommen (Frische und Schlusskurs über EMA 20 als Filter ohne neue Signaltypen; Ereignis-Verkettung ersetzt den Cooldown; ATR-Stärkefilter geprüft und verworfen) |
 | [0058](0058-optionsvorschlaege-im-rueckblick.md) | Optionsvorschläge im Rückblick — modelliert, gekennzeichnet, gemessen | Angenommen (elf Festlegungen; Rohnotierungen ab sofort speichern; Skew erst messen, Strukturvergleich zunächst nur live; keine Zinsannahme; eigene Tabelle und Version) |
+| [0060](0060-dashboard-ausserhalb-des-servers.md) | Das Dashboard läuft außerhalb des Servers — Snapshot je Lauf, ausgehend hochgeladen, Anmeldung an der Kante, Zero-Knowledge als Zielstufe | Vorgeschlagen (zweiter Ansatz zu F12; Grundlage: [Spike-Bericht](../requirements/f12-externes-hosting-spike.md); Annahme erst nach bestandenem PoC; die Nummer 0059 ist durch den zurückgestellten ersten Ansatz auf dem Branch `feature/spike-dashboard-externer-zugriff` belegt) |
 
 ## Offene Entscheidungen
 
@@ -212,3 +213,13 @@ ADR, sobald die nötigen Informationen vorliegen:
   und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
   bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
   letzte Sprint-blockierende Frage dieser Liste beantwortet.
+  **Die angekündigte Neubewertung läuft in zwei Spikes** (beide vom
+  2026-09-06, beide nur vorgeschlagen): Der erste — privater Fernzugang
+  zum Server über ein identitätsgebundenes Overlay-Netz, ADR 0059 — ist
+  zurückgestellt und liegt auf dem Branch
+  `feature/spike-dashboard-externer-zugriff`. Der zweite — das Dashboard
+  läuft außerhalb des Servers, der Server lädt nach jedem Lauf nur
+  ausgehend einen Snapshot hoch — steht als
+  [ADR 0060](0060-dashboard-ausserhalb-des-servers.md) mit
+  [Spike-Bericht](../requirements/f12-externes-hosting-spike.md). Bis zu
+  einer Annahme gilt ADR 0049 unverändert.
