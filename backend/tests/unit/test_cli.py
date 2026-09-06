@@ -3846,6 +3846,10 @@ class TestOptionsBacktestKommando:
         _SammelndeMessung.trades = []
         _SammelndeMessung.aktien = []
         monkeypatch.setattr(cli, "SqlAlchemyUnitOfWork", _SammelndeMessung)
+        # Die Vorabpruefung befragt eine echte Engine; hier steht eine
+        # Attrappe. Dass sie das Richtige prueft, sagt der Integrationstest
+        # gegen die migrierte Datenbank.
+        monkeypatch.setattr(cli, "_tabellen_vorhanden", lambda engine, *namen: True)
 
     def test_die_schalter_haben_dokumentierte_vorgaben(self) -> None:
         args = build_parser().parse_args(["options-backtest"])
