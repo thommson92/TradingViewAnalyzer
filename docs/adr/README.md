@@ -214,11 +214,6 @@ ADR, sobald die nötigen Informationen vorliegen:
   und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
   bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
   letzte Sprint-blockierende Frage dieser Liste beantwortet.
-- Externer Zugriff auf das Dashboard (F12) — **entschieden.** Das MVP ist
-  ausschließlich aus dem eigenen Netz (LAN/VPN) erreichbar, ohne Exposition
-  und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
-  bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
-  letzte Sprint-blockierende Frage dieser Liste beantwortet.
   **Die angekündigte Neubewertung liegt in zwei Spikes vor, beide nur
   vorgeschlagen.** Der erste — privater Fernzugang zum Server über ein
   identitätsgebundenes Overlay-Netz,
