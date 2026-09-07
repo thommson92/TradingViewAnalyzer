@@ -3,6 +3,9 @@ des Application Use Case bzw. der Repositories ueber die UnitOfWork.
 
 **Nur lesend** (ADR 0053): Einen Lauf startet die Aufgabenplanung ueber
 ``cli dispatch``, nicht ein HTTP-Aufruf.
+
+Der Zusammenbau der Antworten steht in ``..views`` -- derselbe Code, aus
+dem der Exportschritt seinen Datenbaum schreibt (ADR 0060).
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from fastapi import status as http_status
 from ai_trading_analyst.application.read_run_overview import ReadRunOverviewUseCase
 from ai_trading_analyst.domain.analysis import RunStatus, UnitOfWork
 
+from .. import views
 from ..dependencies import get_run_overview_use_case, get_unit_of_work_factory
 from ..schemas import (
     AnalysisRunDetailResponse,
@@ -44,14 +48,7 @@ def list_analysis_runs(
     (Doc 10, Paragraph 11).
     """
     with uow_factory() as uow:
-        runs = uow.analysis_runs.list_recent(limit=limit, offset=offset, status=status)
-        total = uow.analysis_runs.count(status=status)
-    return Page(
-        items=[AnalysisRunResponse.from_domain(run) for run in runs],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+        return views.analysis_run_page(uow, limit=limit, offset=offset, status=status)
 
 
 @router.get("/{run_id}", response_model=AnalysisRunDetailResponse)
@@ -81,9 +78,9 @@ def list_reports_of_run(
     Tippfehler in der Kennung aus wie ein Tag ohne Kandidaten.
     """
     with uow_factory() as uow:
-        if uow.analysis_runs.get(run_id) is None:
+        try:
+            return views.reports_of_run(uow, run_id)
+        except views.NotFoundError as fehler:
             raise HTTPException(
-                status_code=http_status.HTTP_404_NOT_FOUND, detail="AnalysisRun nicht gefunden."
-            )
-        reports = uow.stock_reports.list_for_run(run_id)
-    return [ReportSummaryResponse.from_domain(report) for report in reports]
+                status_code=http_status.HTTP_404_NOT_FOUND, detail=str(fehler)
+            ) from fehler
