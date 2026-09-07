@@ -1,0 +1,362 @@
+"""Der Datenbaum eines Snapshots -- Pfad und Inhalt je Datei (ADR 0060).
+
+Der Aufbau steht im Spike-Bericht, Abschnitt 8.2. Zwei Eigenschaften sind
+dabei die wichtigen:
+
+**Keine zweite Wahrheit.** Jede Datei enthaelt die Antwort des jeweiligen
+Endpunkts, gebaut von ``presentation.api.views`` -- demselben Code, den die
+API benutzt. Ein eigener Zusammenbau fuer den Export haette dieselben Zahlen
+ein zweites Mal berechnet, und zwei Rechnungen laufen auseinander.
+
+**Der Snapshot ist eine Aufzaehlung, kein Verzeichnisbaum.** Diese Ebene
+kennt weder Dateisystem noch Verschluesselung noch Anbieter: Sie liefert
+Pfad und Bytes. Was damit geschieht -- schreiben, verschluesseln, hochladen
+-- entscheidet der Aufrufer. Das ist die Naht, an der Stufe 2 die
+Schreibfunktion austauscht, ohne dass hier etwas anzufassen waere.
+
+Der Snapshot ist **deterministisch**: Derselbe Datenbestand ergibt Byte fuer
+Byte dieselben Dateien. Nur das Manifest traegt Zeitpunkt und Kennung des
+Exports und aendert sich mit jedem Lauf. Ohne diese Eigenschaft koennte der
+Upload nicht erkennen, was unveraendert blieb.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel
+
+from ai_trading_analyst import __version__ as anwendungsversion
+from ai_trading_analyst.application.read_run_overview import ReadRunOverviewUseCase
+from ai_trading_analyst.domain.analysis import (
+    MarketDataProvider,
+    MarketDataProviderError,
+    UnitOfWork,
+)
+from ai_trading_analyst.domain.backtesting import BacktestParameters
+from ai_trading_analyst.domain.report import REPORT_SCHEMA_VERSION
+from ai_trading_analyst.domain.screening import SIGNAL_RULE_VERSION, CandidateRuleParameters
+from ai_trading_analyst.observability.logging_setup import get_logger
+from ai_trading_analyst.presentation.api import views
+from ai_trading_analyst.presentation.api.schemas import (
+    AnalysisRunDetailResponse,
+    AnalysisRunResponse,
+)
+from ai_trading_analyst.presentation.validation_chart import build_chart_payload
+
+_logger = get_logger(__name__)
+
+SNAPSHOT_FORMAT = 1
+"""Formatversion des Datenbaums.
+
+Sie steht von Anfang an im Manifest, obwohl es erst eine Fassung gibt: Eine
+Oberflaeche, die einen Datenbaum ohne Formatangabe vorfindet, kann nicht
+zwischen "alte Fassung" und "beschaedigt" unterscheiden.
+
+Ausdruecklich **kein** Schalter fuer das Verschluesselungsverfahren -- das
+ist Eigenschaft des Builds (ADR 0060, Entscheidung Punkt 6). Stuende es
+hier, koennte wer das Manifest schreiben darf auf Klartext zurueckschalten.
+"""
+
+MANIFEST_PFAD = "data/manifest.json"
+
+_SEITE = 200
+"""Wie viele Laeufe je Abfrage geladen werden. Nur eine Speichergrenze."""
+
+
+@dataclass(frozen=True, slots=True)
+class Exportdatei:
+    """Eine Datei des Datenbaums: kanonischer Pfad und fertige Bytes.
+
+    Der Pfad ist zugleich Teil der Zusatzdaten der Verschluesselung in
+    Stufe 2 -- eine Datei, die unter einem anderen Pfad auftaucht, laesst
+    sich dort nicht mehr entschluesseln (Vertauschungsschutz). Deshalb ist er
+    kanonisch und nicht plattformabhaengig: immer mit ``/``, immer beginnend
+    mit ``data/``.
+    """
+
+    pfad: str
+    inhalt: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class Exportquellen:
+    """Woraus der Snapshot entsteht.
+
+    Dieselben Bausteine, die auch die API im ``app.state`` haelt. Der
+    Marktdatenanbieter kommt als **Fabrik**, wie im Webdienst: Er haengt an
+    der Watchlist-Datei, und ein fehlendes Verzeichnis soll den Chart kosten
+    und nicht den ganzen Export.
+    """
+
+    uow_factory: Callable[[], UnitOfWork]
+    backtest_parameters: BacktestParameters
+    candidate_rule_parameters: CandidateRuleParameters
+    chart_market_data: Callable[[], MarketDataProvider]
+
+
+_UNSICHER = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def dateisicherer_name(symbol: str) -> str:
+    """Ein Symbol als Verzeichnisname.
+
+    ``BRK B`` und ``BF.B`` sind gueltige Symbole und keine gueltigen
+    Pfadbestandteile auf allen Systemen -- Windows mag den Punkt am Ende
+    nicht, ein Leerzeichen macht jede Kommandozeile unleserlich. Ersetzt wird
+    deshalb alles ausserhalb von Buchstaben, Ziffern, ``_`` und ``-``.
+
+    Die Abbildung Symbol -> Name steht im Manifest, damit die Oberflaeche
+    nicht dieselbe Regel ein zweites Mal umsetzen muss. In Stufe 2 sind alle
+    Namen ohnehin opak, und die Abbildung liegt im verschluesselten Manifest.
+    """
+    ersetzt = _UNSICHER.sub("-", symbol.strip().upper())
+    return ersetzt or "-"
+
+
+def _symbolnamen(symbole: Sequence[str]) -> dict[str, str]:
+    """Symbol -> Verzeichnisname, kollisionsfrei und stabil.
+
+    ``BRK B`` und ``BRK-B`` ergaeben denselben Namen. Der zweite bekommt
+    deshalb eine Nummer angehaengt -- vergeben in alphabetischer Reihenfolge
+    der Symbole, damit derselbe Bestand immer dieselben Namen ergibt. Zwei
+    Exporte, die dieselbe Aktie unter verschiedenen Namen ablegen, waeren
+    zwei Datenbaeume und kein Snapshot.
+    """
+    vergeben: dict[str, str] = {}
+    belegt: set[str] = set()
+    for symbol in sorted(symbole):
+        name = dateisicherer_name(symbol)
+        if name in belegt:
+            nummer = 2
+            while f"{name}-{nummer}" in belegt:
+                nummer += 1
+            name = f"{name}-{nummer}"
+        belegt.add(name)
+        vergeben[symbol] = name
+    return vergeben
+
+
+def _als_json(nutzlast: Any) -> bytes:
+    """JSON in der Fassung, die auch die API schickt.
+
+    ``ensure_ascii=False``: Die Berichte sind deutsch, und ``\\u00e4`` statt
+    ``ä`` blaehte den Export ohne Gewinn. ``sort_keys`` bleibt aus -- das
+    Berichtsdokument geht unveraendert hinaus (ADR 0039), und eine
+    umsortierte Abschnittsfolge waere eine Veraenderung.
+    """
+    return json.dumps(nutzlast, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _modell(antwort: BaseModel) -> bytes:
+    return _als_json(antwort.model_dump(mode="json"))
+
+
+def _alle_laeufe(uow: UnitOfWork) -> list[AnalysisRunResponse]:
+    """Alle Laeufe, neueste zuerst -- seitenweise geladen.
+
+    Das Repository bietet bewusst kein ``list_all`` (die Zahl waechst mit
+    jedem Handelstag). Hier wird trotzdem alles gebraucht, weil die
+    Oberflaeche ausserhalb selbst blaettert; geladen wird deshalb in Seiten
+    und nicht in einem Zug.
+    """
+    gesammelt: list[AnalysisRunResponse] = []
+    offset = 0
+    while True:
+        seite = views.analysis_run_page(uow, limit=_SEITE, offset=offset)
+        gesammelt.extend(seite.items)
+        if len(seite.items) < _SEITE or len(gesammelt) >= seite.total:
+            return gesammelt
+        offset += _SEITE
+
+
+def iter_snapshot(
+    quellen: Exportquellen,
+    *,
+    export_id: UUID | None = None,
+    jetzt: datetime | None = None,
+) -> Iterator[Exportdatei]:
+    """Der vollstaendige Datenbaum, Datei fuer Datei.
+
+    Ein Generator und keine Liste: Der Vollexport ist gemessen rund 75 MB
+    roh, und ihn erst vollstaendig im Speicher aufzubauen, um ihn danach zu
+    schreiben, waere auf dem Handelsrechner die falsche Sparsamkeit.
+
+    **Das Manifest kommt zuletzt.** Es zaehlt, was tatsaechlich entstanden
+    ist -- und ein abgebrochener Export hinterlaesst damit keinen Stand,
+    statt einen unvollstaendigen zu behaupten.
+    """
+    kennung = export_id if export_id is not None else uuid4()
+    zeitpunkt = jetzt if jetzt is not None else datetime.now(UTC)
+
+    berichte_gesamt = 0
+    charts_gesamt = 0
+    fehlende_charts: list[str] = []
+
+    with quellen.uow_factory() as uow:
+        laeufe = _alle_laeufe(uow)
+        yield Exportdatei(
+            "data/analysis-runs.json",
+            _als_json([lauf.model_dump(mode="json") for lauf in laeufe]),
+        )
+
+        uebersicht = ReadRunOverviewUseCase(quellen.uow_factory)
+        for lauf in laeufe:
+            lauf_id = lauf.id
+            detail = uebersicht.execute(lauf_id)
+            if detail is not None:
+                yield Exportdatei(
+                    f"data/analysis-runs/{lauf_id}.json",
+                    _modell(AnalysisRunDetailResponse.from_overview(detail)),
+                )
+            kurzliste = views.reports_of_run(uow, lauf_id)
+            yield Exportdatei(
+                f"data/analysis-runs/{lauf_id}/reports.json",
+                _als_json([eintrag.model_dump(mode="json") for eintrag in kurzliste]),
+            )
+            for eintrag in kurzliste:
+                bericht = uow.stock_reports.get(eintrag.report_id)
+                if bericht is None:
+                    continue
+                berichte_gesamt += 1
+                # Das gespeicherte Dokument, unveraendert (ADR 0039).
+                yield Exportdatei(
+                    f"data/reports/{bericht.id}.json", _als_json(dict(bericht.document))
+                )
+
+        symbole = sorted(stock.symbol for stock in uow.stocks.list_all())
+        namen = _symbolnamen(symbole)
+
+        messungen = views.measurements(uow)
+        yield Exportdatei(
+            "data/options-backtests.json",
+            _als_json([messung.model_dump(mode="json") for messung in messungen]),
+        )
+        for messung in messungen:
+            messung_id = messung.measurement_id
+            yield Exportdatei(
+                f"data/options-backtests/{messung_id}.json",
+                _modell(
+                    views.measurement_detail(
+                        uow, messung_id, backtest_params=quellen.backtest_parameters
+                    )
+                ),
+            )
+
+        for symbol in symbole:
+            name = namen[symbol]
+            historie = views.reports_of_stock(uow, symbol, limit=_SEITE, offset=0)
+            yield Exportdatei(
+                f"data/stocks/{name}/reports.json",
+                _als_json([eintrag.model_dump(mode="json") for eintrag in historie.items]),
+            )
+            yield Exportdatei(
+                f"data/stocks/{name}/backtest.json",
+                _modell(
+                    views.stock_backtest(
+                        uow,
+                        symbol,
+                        measurement_id=None,
+                        backtest_params=quellen.backtest_parameters,
+                    )
+                ),
+            )
+
+    # Die Charts ausserhalb der Unit of Work: Der Anbieter liest den Bestand
+    # selbst, und eine Transaktion ueber zweihundert Kursreihen offen zu
+    # halten waere eine lange Sperre ohne Gegenwert.
+    marktdaten = quellen.chart_market_data()
+    with quellen.uow_factory() as uow:
+        for symbol in symbole:
+            aktie = uow.stocks.get_by_symbol(symbol)
+            if aktie is None:  # pragma: no cover -- gerade eben noch gelistet
+                continue
+            try:
+                reihe = marktdaten.get_candle_series(aktie)
+            except MarketDataProviderError as fehler:
+                # Eine Aktie ohne Kerzen im Bestand kostet ihren Chart, nicht
+                # den Export. Ein Datenbankabriss ist etwas anderes und faellt
+                # als MarketDataUnavailableError durch -- der Export bricht
+                # dann ab, statt einen Snapshot ohne Charts zu behaupten.
+                _logger.warning("Kein Chart fuer %s im Export: %s", symbol, fehler)
+                fehlende_charts.append(symbol)
+                continue
+            charts_gesamt += 1
+            yield Exportdatei(
+                f"data/stocks/{namen[symbol]}/chart.json",
+                _als_json(
+                    build_chart_payload(symbol, reihe, quellen.candidate_rule_parameters)
+                ),
+            )
+
+    yield Exportdatei(
+        MANIFEST_PFAD,
+        _als_json(
+            _manifest(
+                export_id=kennung,
+                zeitpunkt=zeitpunkt,
+                laeufe=laeufe,
+                namen=namen,
+                berichte=berichte_gesamt,
+                messungen=len(messungen),
+                charts=charts_gesamt,
+                fehlende_charts=fehlende_charts,
+            )
+        ),
+    )
+
+
+def _manifest(
+    *,
+    export_id: UUID,
+    zeitpunkt: datetime,
+    laeufe: Sequence[AnalysisRunResponse],
+    namen: Mapping[str, str],
+    berichte: int,
+    messungen: int,
+    charts: int,
+    fehlende_charts: Sequence[str],
+) -> dict[str, Any]:
+    """Was die Oberflaeche ueber diesen Stand wissen muss.
+
+    Die Pflichtanzeige "Stand: Lauf vom ..., exportiert ..." haengt daran:
+    **Ein alter Stand muss alt aussehen.** Ein Dashboard, das gestrige Zahlen
+    zeigt, ohne es zu sagen, ist gefaehrlicher als eines, das gar nichts
+    zeigt -- der Server koennte seit Tagen stehen.
+
+    ``fehlende_charts`` steht ausdruecklich drin: Ohne die Liste saehe eine
+    Aktie ohne Kursreihe im Bestand aus wie eine, deren Datei beim Hochladen
+    verloren ging.
+    """
+    juengster = laeufe[0] if laeufe else None
+    return {
+        "format": SNAPSHOT_FORMAT,
+        "export_id": str(export_id),
+        "exported_at": zeitpunkt.isoformat(),
+        "run_id": str(juengster.id) if juengster is not None else None,
+        "run_started_at": juengster.started_at.isoformat() if juengster is not None else None,
+        "run_completed_at": (
+            juengster.completed_at.isoformat()
+            if juengster is not None and juengster.completed_at is not None
+            else None
+        ),
+        "run_status": juengster.status.value if juengster is not None else None,
+        "application_version": anwendungsversion,
+        "report_schema_version": REPORT_SCHEMA_VERSION,
+        "signal_rule_version": SIGNAL_RULE_VERSION,
+        "symbols": dict(namen),
+        "counts": {
+            "runs": len(laeufe),
+            "reports": berichte,
+            "stocks": len(namen),
+            "charts": charts,
+            "measurements": messungen,
+        },
+        "stocks_without_chart": list(fehlende_charts),
+    }

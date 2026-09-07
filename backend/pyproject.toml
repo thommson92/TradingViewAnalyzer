@@ -36,6 +36,12 @@ dependencies = [
     # rohes httpx fehleranfaellig nachzubauen -- anders als beim einzelnen
     # GET-Aufruf des Finnhub-Adapters.
     "anthropic>=0.100,<1",
+    # AES-256-GCM fuer den verschluesselten Datenbaum des externen Dashboards
+    # (ADR 0060, Stufe 2). Die Standardbibliothek kann PBKDF2 und HMAC, aber
+    # keine authentifizierte Verschluesselung -- und eine selbstgebaute waere
+    # genau die Sorte Code, die man nicht selbst baut. Die Gegenseite im
+    # Browser ist WebCrypto und braucht keine Bibliothek.
+    "cryptography>=43,<47",
 ]
 
 [project.optional-dependencies]

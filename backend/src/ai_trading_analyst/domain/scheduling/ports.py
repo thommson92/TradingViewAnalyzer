@@ -106,3 +106,30 @@ class Notifier(Protocol):
     """
 
     def send(self, subject: str, body: str) -> None: ...
+
+
+class DashboardPublisherError(Exception):
+    """Der Snapshot des Dashboards ging nicht hinaus.
+
+    Wird vom Application Layer isoliert, aus demselben Grund wie
+    ``NotifierError``: Das Ergebnis des Laufs steht zu diesem Zeitpunkt
+    bereits in der Datenbank. Ein Anbieter, der gerade nicht erreichbar ist,
+    darf einen erledigten Lauf nicht nachtraeglich scheitern lassen
+    (ADR 0060, Entscheidung Punkt 2).
+    """
+
+
+class DashboardPublisher(Protocol):
+    """Ausgang fuer den Snapshot, den das Dashboard ausserhalb des Servers
+    anzeigt (ADR 0060).
+
+    Die Richtung ist Absicht und der Kern der Entscheidung: Der Server
+    **sendet**. Es gibt keinen Weg zurueck -- kein eingehender Port, kein
+    Agent, kein Tunnel. Die Domain kennt weder den Anbieter noch das
+    Dateiformat, nur diesen einen Aufruf.
+
+    Raises:
+        DashboardPublisherError: wenn der Snapshot nicht hinausging.
+    """
+
+    def publish(self) -> None: ...

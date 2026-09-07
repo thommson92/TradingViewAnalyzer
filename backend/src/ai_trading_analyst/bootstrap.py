@@ -10,7 +10,7 @@ gleichzeitig referenziert werden (Doc 10, Paragraph 9).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from functools import cache
 from importlib import metadata
 from pathlib import Path
@@ -113,9 +113,11 @@ from ai_trading_analyst.infrastructure.persistence.session import (
 )
 from ai_trading_analyst.infrastructure.persistence.stored_bar_source import StoredBarSource
 from ai_trading_analyst.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from ai_trading_analyst.infrastructure.publishing import Exportziel, SnapshotPublisher
 from ai_trading_analyst.infrastructure.throttle import Drossel
 from ai_trading_analyst.infrastructure.watchlists import load_watchlist_directory
 from ai_trading_analyst.presentation.api.app import create_app
+from ai_trading_analyst.presentation.export import Exportquellen, iter_snapshot
 
 
 def project_root(config_path: Path) -> Path:
@@ -633,6 +635,103 @@ def build_backtest_params(config: AppConfig) -> BacktestParameters:
     )
 
 
+def build_candidate_rule_params(
+    indicators: IndicatorConfig, config: AppConfig
+) -> CandidateRuleParameters:
+    """Die Kandidatenregel, wie der Lauf sie sieht.
+
+    Zweimal gebraucht -- vom Webdienst fuer den Validierungschart und vom
+    Exportschritt fuer denselben Chart als Datei. Zweimal aufgeschrieben
+    liefen sie irgendwann auseinander.
+    """
+    return CandidateRuleParameters(
+        required_crossing_signals=config.screening.required_crossing_signals,
+        signal_lookback_previous_candles=config.screening.signal_lookback_previous_candles,
+        warmup_candles=indicators.warmup_candles,
+    )
+
+
+def build_dashboard_publisher(
+    config: AppConfig,
+    secrets: Secrets,
+    root: Path,
+    *,
+    uow_factory: Callable[[], UnitOfWork],
+) -> SnapshotPublisher | None:
+    """Der Exportschritt -- oder ``None``, wenn er abgeschaltet ist (ADR 0060).
+
+    Ausgeliefert ist er abgeschaltet. Eingeschaltet wird er ueber die
+    Konfiguration der Aufgabenplanung, wie die Anbieter auch.
+
+    **Der Chart kommt aus dem Bestand, nie von der TWS.** Der Export laeuft am
+    Ende des Tageslaufs, und der haelt zu diesem Zeitpunkt die Client-ID; ein
+    zweiter Zugriff darauf wuerde die Verbindung verdraengen. Dieselbe
+    Festlegung wie im Webdienst (ADR 0052), hier aus einem zweiten Grund.
+
+    Raises:
+        ValueError: wenn ein Ziel eingestellt ist, aber kein Verzeichnis.
+        MissingSecretError: wenn verschluesselt werden soll und die
+            Passphrase fehlt. **Kein Rueckfall auf Klartext:** Ein Tippfehler
+            im Namen der Umgebungsvariablen wuerde sonst stillschweigend
+            Berichte und Kurse offen beim Anbieter ablegen.
+    """
+    einstellungen = config.dashboard_export
+    if einstellungen.target == "none":
+        return None
+    if not einstellungen.directory:
+        raise ValueError(
+            "dashboard_export.target ist gesetzt, aber dashboard_export.directory fehlt."
+        )
+
+    verzeichnis = (root / einstellungen.directory).resolve()
+    zustandsdatei = (
+        (root / einstellungen.state_file).resolve()
+        if einstellungen.state_file
+        else verzeichnis.with_name(verzeichnis.name + ".zustand.json")
+    )
+    passphrase = (
+        secrets.require("dashboard_export_passphrase") if einstellungen.encrypt else None
+    )
+
+    indicators = config.require_indicators()
+    nur_bestand = config.model_copy(
+        update={"market_data": config.market_data.model_copy(update={"source": "stored"})}
+    )
+
+    @cache
+    def chart_market_data() -> MarketDataProvider:
+        return build_market_data_provider(
+            nur_bestand, indicators, root, uow_factory=uow_factory
+        )
+
+    quellen = Exportquellen(
+        uow_factory=uow_factory,
+        backtest_parameters=build_backtest_params(config),
+        candidate_rule_parameters=build_candidate_rule_params(indicators, config),
+        chart_market_data=chart_market_data,
+    )
+
+    def dateien() -> Iterator[tuple[str, bytes]]:
+        """Die Naht zwischen den Schichten.
+
+        Die Infrastruktur darf die Praesentationsschicht nicht kennen
+        (Doc 10, Paragraph 9). Sie bekommt deshalb Pfad und Bytes, und wo
+        die herkommen, weiss allein dieser Composition Root.
+        """
+        for datei in iter_snapshot(quellen):
+            yield datei.pfad, datei.inhalt
+
+    return SnapshotPublisher(
+        snapshot=dateien,
+        ziel=Exportziel(
+            wurzel=verzeichnis,
+            zustandsdatei=zustandsdatei,
+            passphrase=passphrase,
+            iterationen=einstellungen.pbkdf2_iterations,
+        ),
+    )
+
+
 def build_app() -> FastAPI:
     """Die Web-Anwendung: Datenbank, sonst nichts.
 
@@ -683,12 +782,8 @@ def build_app() -> FastAPI:
     # gar keine.
     indicators = loaded.config.require_indicators()
     app.state.backtest_parameters = build_backtest_params(loaded.config)
-    app.state.candidate_rule_parameters = CandidateRuleParameters(
-        required_crossing_signals=loaded.config.screening.required_crossing_signals,
-        signal_lookback_previous_candles=(
-            loaded.config.screening.signal_lookback_previous_candles
-        ),
-        warmup_candles=indicators.warmup_candles,
+    app.state.candidate_rule_parameters = build_candidate_rule_params(
+        indicators, loaded.config
     )
     # **Fest auf den Bestand, und erst auf Zuruf.** Der Chart braucht Kerzen,
     # und die liegen in der Datenbank; ein Webdienst, der dafuer die

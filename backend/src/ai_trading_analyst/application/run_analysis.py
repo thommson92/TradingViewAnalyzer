@@ -66,7 +66,12 @@ from ai_trading_analyst.domain.report import (
     render_notification,
 )
 from ai_trading_analyst.domain.research import ResearchReport, ResearchStatus
-from ai_trading_analyst.domain.scheduling import Notifier, NotifierError
+from ai_trading_analyst.domain.scheduling import (
+    DashboardPublisher,
+    DashboardPublisherError,
+    Notifier,
+    NotifierError,
+)
 from ai_trading_analyst.domain.scoring import (
     RecommendationResult,
     ScoreResult,
@@ -220,6 +225,7 @@ class RunAnalysisUseCase:
         notify_without_candidates: bool = False,
         market_timezone: str = "America/New_York",
         repeat_suppression: RepeatSuppressionParameters | None = None,
+        dashboard_publisher: DashboardPublisher | None = None,
     ) -> None:
         self._market_data_provider = market_data_provider
         self._earnings_provider = earnings_provider
@@ -240,6 +246,7 @@ class RunAnalysisUseCase:
         self._notifier = notifier
         self._notify_without_candidates = notify_without_candidates
         self._market_timezone = market_timezone
+        self._dashboard_publisher = dashboard_publisher
         self._repeat_suppression = repeat_suppression
         """``None`` heisst Sperre aus -- fuer manuelle Aufrufer und Tests,
         die keinen Bestand kennen. Der Tageslauf reicht die konfigurierten
@@ -383,6 +390,7 @@ class RunAnalysisUseCase:
 
         summary = AnalysisRunSummary(run=run, outcomes=tuple(outcomes), errors=tuple(errors))
         self._notify(summary)
+        self._publish_dashboard()
         return summary
 
     def _notify(self, summary: AnalysisRunSummary) -> None:
@@ -408,6 +416,52 @@ class RunAnalysisUseCase:
             _logger.error("Ergebnismeldung ging nicht raus: %s", error)
         except Exception:
             _logger.exception("Ergebnismeldung liess sich nicht erzeugen")
+
+    def _publish_dashboard(self) -> None:
+        """Der Snapshot fuer das Dashboard ausserhalb des Servers (ADR 0060).
+
+        **Nach der Meldung und mit derselben Isolation wie sie.** Der Lauf ist
+        an dieser Stelle fertig und sein Ergebnis steht in der Datenbank; ein
+        Export, der nicht schreiben kann, darf daraus keinen gescheiterten
+        Lauf machen. Er meldet sich stattdessen -- ein Dashboard, das
+        stillschweigend auf gestrigen Zahlen stehen bleibt, waere der
+        gefaehrlichere Ausgang.
+
+        Die zweite Nachricht ist Absicht und keine Verdopplung: Die
+        Ergebnismeldung ist zu diesem Zeitpunkt bereits raus, und sie
+        nachtraeglich zu aendern hiesse, sie zurueckzuhalten, bis der Export
+        durch ist. Sie enthaelt keine Inhalte (ADR 0040), nur den Hinweis.
+        """
+        if self._dashboard_publisher is None:
+            return
+        try:
+            self._dashboard_publisher.publish()
+        except DashboardPublisherError as error:
+            _logger.error("Dashboard nicht aktualisiert: %s", error)
+            self._melde_exportfehler()
+        except Exception:
+            _logger.exception("Dashboard-Export abgebrochen")
+            self._melde_exportfehler()
+
+    def _melde_exportfehler(self) -> None:
+        """Der Hinweis auf einen nicht aktualisierten Snapshot.
+
+        Auch hier gilt, was fuer die Ergebnismeldung gilt: Ein
+        unerreichbarer Kanal darf den Lauf nicht scheitern lassen. Zwei
+        ineinander verschachtelte Systemgrenzen, und keine von beiden haelt
+        den Lauf an.
+        """
+        if self._notifier is None:
+            return
+        try:
+            self._notifier.send(
+                "Dashboard nicht aktualisiert",
+                "Der Lauf ist abgeschlossen, der Snapshot fuer das externe "
+                "Dashboard nicht geschrieben. Es zeigt weiter den letzten "
+                "Stand; Einzelheiten stehen im Protokoll des Servers.",
+            )
+        except NotifierError as error:
+            _logger.error("Hinweis auf den Exportfehler ging nicht raus: %s", error)
 
     def _prepare_stock(self, stock: Stock) -> _PreparedItem:
         """Screening und Earnings-Filter fuer eine Aktie -- ohne Research

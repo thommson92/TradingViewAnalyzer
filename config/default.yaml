@@ -456,6 +456,25 @@ notifications:
     base_url: https://api.telegram.org
     request_timeout_seconds: 10
 
+# Das Dashboard außerhalb des Servers (ADR 0060). Der Server bekommt dadurch
+# keinen eingehenden Port: Er schreibt nach jedem Lauf einen Datenbaum und
+# sendet ihn später nur ausgehend. Ausgeliefert ist der Schritt
+# abgeschaltet -- eingeschaltet wird er auf dem Server, wie die Anbieter auch.
+dashboard_export:
+  target: none
+  directory: null
+  # Der Zustand (Hash je Pfad, Salt, Baumkennung) liegt außerhalb des
+  # veröffentlichten Verzeichnisses: Er enthält in Stufe 2 die Zuordnung von
+  # Pfad zu opakem Namen, und genau die soll der Anbieter nicht sehen. Ohne
+  # Angabe liegt er neben dem Verzeichnis.
+  state_file: null
+  # Zero-Knowledge ist die Zielstufe und nicht ein Extra (ADR 0060, Punkt 6;
+  # Entscheidung E1 vom 2026-09-07). Auf 'true' verlangt der Export die
+  # Passphrase aus ATA_DASHBOARD_EXPORT_PASSPHRASE und bricht ohne sie ab --
+  # es gibt bewusst keinen stillen Rückfall auf Klartext.
+  encrypt: true
+  pbkdf2_iterations: 600000
+
 options:
   # Optionsanalyse: ausschließlich Cash Secured Puts (Doc 08; Doc 10,
   # Paragraph 6.10; ADR 0048). Läuft nur für Kandidaten -- eine Optionskette
