@@ -132,3 +132,38 @@ class TestFruehePruefungen:
         assert veroeffentlicher is not None
         ziel = veroeffentlicher._ziel  # type: ignore[attr-defined]
         assert not ziel.zustandsdatei.is_relative_to(ziel.wurzel)
+
+
+class TestGeheimnisse:
+    def test_die_passphrase_wird_zur_schwaerzung_angemeldet(self) -> None:
+        """ADR 0044: Was in ``Secrets`` steht, darf nicht ins Protokoll.
+
+        Der Exportschritt protokolliert Ziel, Umfang und Dauer -- und im
+        Fehlerfall die Meldung der Bibliothek. Eine Passphrase, die dabei
+        durchschluepft, stuende in einer Datei auf dem Handelsrechner.
+        """
+        from ai_trading_analyst.observability.secret_redaction import redact_registered
+
+        Secrets(dashboard_export_passphrase="streng-geheime-passphrase")
+
+        assert "streng-geheime-passphrase" not in redact_registered(
+            "Fehler mit streng-geheime-passphrase im Text"
+        )
+
+
+class TestKommandozeile:
+    def test_publish_meldet_den_abgeschalteten_export_ohne_datenbank(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Rueckgabewert 2 und eine Meldung -- **vor** dem Verbindungsversuch.
+
+        Ausgeliefert steht der Export auf ``none``. Ein Aufruf soll das sagen
+        und nicht hinter einem Datenbankfehler verschwinden, der mit der Sache
+        nichts zu tun hat.
+        """
+        from ai_trading_analyst import cli
+
+        code = cli.main(["publish"])
+
+        assert code == 2
+        assert "abgeschaltet" in capsys.readouterr().err
