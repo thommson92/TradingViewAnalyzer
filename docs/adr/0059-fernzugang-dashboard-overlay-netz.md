@@ -1,8 +1,8 @@
 # ADR 0059: Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit
 
 - Status: Vorgeschlagen — **am 2026-09-07 zurückgestellt** zugunsten von
-  ADR 0060 (Dashboard außerhalb des Servers; eigener Branch, mit diesem
-  Stand noch nicht im Hauptzweig); siehe den Nachtrag am Ende
+  [ADR 0060](0060-dashboard-ausserhalb-des-servers.md) (Dashboard außerhalb
+  des Servers); siehe den Nachtrag am Ende
 - Datum: 2026-09-06
 
 ## Kontext
@@ -335,10 +335,8 @@ Dieses ADR wird **nicht weiterverfolgt, um das Dashboard erreichbar zu
 machen.** Der Projektinhaber hat am 2026-09-07 entschieden, stattdessen den
 umgekehrten Weg zu prüfen: Das Dashboard läuft außerhalb des Servers, und
 der Server lädt nach jedem Lauf nur ausgehend einen Snapshot hoch. Das steht
-in `docs/adr/0060-dashboard-ausserhalb-des-servers.md` und
-`docs/requirements/f12-externes-hosting-spike.md` auf dem Branch
-`feature/spike-dashboard-extern-hosting`; hier sind beide noch nicht
-verlinkt, weil sie mit diesem Stand noch nicht im Hauptzweig liegen.
+in [ADR 0060](0060-dashboard-ausserhalb-des-servers.md) und im
+[Hosting-Spike](../requirements/f12-externes-hosting-spike.md).
 
 **Der Grund ist keine Schwäche dieses Entwurfs, sondern eine Anforderung,
 die er nicht erfüllt.** Der Overlay-Weg verlangt Client-Software auf jedem
@@ -353,7 +351,7 @@ Beschränkung auf benannte Geräte — zum Ausschlussgrund.
 - Die Ist-Aufnahme und das Threat Model des Spike-Berichts, insbesondere der
   Kernbefund: Der Server ist der Handelsrechner, und jeder Prozess auf ihm,
   der `127.0.0.1:7496` erreicht, kann Orders übermitteln. Er ist der Grund,
-  warum auch der Hosting-Weg den Server unerreichbar lässt.
+  warum auch ADR 0060 den Server unerreichbar lässt.
 - Der Befund, dass der Webprozess **kein Logging konfiguriert** und die
   Schwärzung aus [ADR 0044](0044-geheimnisse-an-der-log-senke-schwaerzen.md)
   dort nicht wirkt. Er ist von beiden Wegen unabhängig und bleibt zu

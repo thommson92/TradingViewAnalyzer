@@ -1269,10 +1269,9 @@ wieder einsteigt.
 
 Der Projektinhaber hat diesen Weg **für das Dashboard zurückgestellt** und
 stattdessen prüfen lassen, wie das Frontend **außerhalb** des Windows-Servers
-laufen kann. Das Ergebnis steht in `docs/requirements/f12-externes-hosting-spike.md`
-und `docs/adr/0060-dashboard-ausserhalb-des-servers.md` auf dem Branch
-`feature/spike-dashboard-extern-hosting`; hier sind beide bewusst noch nicht
-verlinkt, weil sie mit diesem Stand noch nicht im Hauptzweig liegen.
+laufen kann. Das Ergebnis steht im
+[Hosting-Spike](f12-externes-hosting-spike.md) und in
+[ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md).
 
 Der Grund liegt nicht in der Sicherheit dieses Entwurfs, sondern in einer
 Anforderung, die er nicht erfüllt: **Zugriff von beliebigen Geräten ohne
@@ -1334,7 +1333,7 @@ Drei Ergebnisse sind vom gewählten Weg unabhängig und gelten weiter:
    und dieselbe Instanz überträgt für die Trade Automation Toolbox echte
    Orders; „Read-Only API" ist deshalb bewusst aus. Jeder Prozess auf diesem
    Rechner, der `127.0.0.1:7496` erreicht, kann Orders übermitteln. Das ist
-   der Grund, warum auch der Hosting-Weg den Server unerreichbar lässt.
+   der Grund, warum auch ADR 0060 den Server unerreichbar lässt.
 2. **Der Logging-Befund.** Der Webprozess ruft `configure_logging()` nicht
    auf; die Schwärzung aus
    [ADR 0044](../adr/0044-geheimnisse-an-der-log-senke-schwaerzen.md) wirkt
@@ -1404,7 +1403,8 @@ geht in dieser Reihenfolge vor:
 **Was sich seit dem 2026-09-06 geändert haben kann und vor der
 Wiederaufnahme zu prüfen ist:** ob der Dashboard-Dienst inzwischen auf dem
 Server eingerichtet wurde (Doc 14, Betriebszustand sagte „läuft noch
-nicht"); ob der Hosting-Weg (ADR 0060) angenommen und umgesetzt ist, denn
+nicht"); ob [ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md)
+angenommen und umgesetzt ist, denn
 dann liegt ein Teil der Härtung aus 8.4 bereits vor; und ob die Ist-Aufnahme
 in Abschnitt 2 noch zum Code passt.
 
@@ -1412,7 +1412,7 @@ in Abschnitt 2 noch zum Code passt.
 
 Die beiden Wege schließen sich **nicht** aus und lösen verschiedene Probleme:
 
-| | Dieser Spike (ADR 0059) | Hosting-Weg (ADR 0060) |
+| | Dieser Spike (ADR 0059) | Hosting-Spike (ADR 0060) |
 |---|---|---|
 | Frage | Wie kommt der Nutzer sicher **an den Server**? | Wie kommt die **Anzeige** sicher zum Nutzer? |
 | Daten | bleiben auf dem Server | verlassen ihn als Snapshot |
