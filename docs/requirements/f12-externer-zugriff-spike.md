@@ -1,13 +1,16 @@
 # F12 — Sicherer Fernzugang zum Dashboard: Spike-Bericht
 
-- Status: **Spike abgeschlossen, Entscheidung offen.** Der daraus
-  abgeleitete Vorschlag steht in
+- Status: **Spike abgeschlossen; am 2026-09-07 zurückgestellt.** Was das
+  heißt und wo jemand anknüpft, steht in **Abschnitt 15** am Ende dieses
+  Dokuments. Der abgeleitete Vorschlag steht in
   [ADR 0059](../adr/0059-fernzugang-dashboard-overlay-netz.md) mit Status
   „Vorgeschlagen". Dieses Dokument ist die Grundlage dafür — Ist-Aufnahme,
   Threat Model, Variantenvergleich, Proof-of-Concept-Plan — und bleibt als
   Beleg erhalten, wie
   [earnings-anbieter-evaluation.md](earnings-anbieter-evaluation.md) und
-  [g3-entscheidungsvorlage.md](g3-entscheidungsvorlage.md).
+  [g3-entscheidungsvorlage.md](g3-entscheidungsvorlage.md). Für das
+  Dashboard wird dieser Weg nicht weiterverfolgt; für die Fernwartung des
+  Servers bleibt er offen.
 - Datum: 2026-09-06
 - Gegenstand: Frage 13 aus Doc 10 §19 — „Wie erfolgt der sichere externe
   Zugriff auf das Dashboard?" —, in den Audits als F12 beziehungsweise E8
@@ -1254,6 +1257,131 @@ Bricht eine dieser Prüfungen, gilt die Reihenfolge aus Abschnitt 12.
 - Keine Korrektur der Dokumentationsbefunde D1–D10.
 - Keine Bewertung des Fernwartungswegs des Inhabers (O2), weil er im
   Repository nicht steht — er ist die erste Frage vor dem PoC.
+
+## 15. Stand bei der Zurückstellung (2026-09-07)
+
+Dieser Abschnitt ist nachgetragen. Alles davor beschreibt den Spike, wie er
+am 2026-09-06 abgeschlossen wurde; hier steht, wie er endete und wo jemand
+wieder einsteigt.
+
+### 15.1 Was entschieden wurde
+
+Der Projektinhaber hat diesen Weg **für das Dashboard zurückgestellt** und
+stattdessen prüfen lassen, wie das Frontend **außerhalb** des Windows-Servers
+laufen kann. Das Ergebnis steht in `docs/requirements/f12-externes-hosting-spike.md`
+und `docs/adr/0060-dashboard-ausserhalb-des-servers.md`; beide entstehen auf
+einem eigenen Branch und sind hier bewusst noch nicht verlinkt, weil sie mit
+diesem Stand noch nicht im Hauptzweig liegen.
+
+Der Grund liegt nicht in der Sicherheit dieses Entwurfs, sondern in einer
+Anforderung, die er nicht erfüllt: **Zugriff von beliebigen Geräten ohne
+Client-Software.** Das Overlay verlangt auf jedem zugreifenden Gerät einen
+Agenten (Abschnitt 6, V1c, „Was sie nicht leistet"); daran hängt zugleich
+seine Stärke, die Gerätebindung. Der Inhaber hält eine einfache Anmeldung
+für ausreichend und den Zugriff auf die Anzeige für nicht
+sicherheitskritisch.
+
+**Nicht entschieden wurde, dass der Weg untauglich sei.** ADR 0059 steht
+weiterhin auf „Vorgeschlagen" — weder angenommen noch abgelehnt.
+
+### 15.2 Was fertig ist
+
+| Teil | Stand |
+|---|---|
+| Ist-Architektur (Abschnitt 2) | vollständig, gegen den Code belegt; zwei unabhängige Reviews eingearbeitet |
+| Threat Model (5) | 20 Bedrohungen, sieben Schutzgüter, Vertrauensgrenzen |
+| Varianten und Matrix (6, 7) | sechs Wege, 15 Kriterien, Empfehlung V1c |
+| Empfehlung (8) | Overlay-Netz, Härtung, Stufenmodell, Protokolle, Sicherung |
+| Restrisiken, offene Fragen, Entscheidungspunkte (9, 10) | R1–R10, O1–O12, E1–E6 |
+| PoC-Plan (11) | drei Phasen, AK1–AK20, N1–N16, Loopback-Messung, Prüfung von außen, Rückbau |
+| Notausschalter und Betriebstests (12, 13) | K1–K5, Turnus |
+
+**Nicht begonnen: der PoC selbst.** Es wurde nichts installiert, kein Konto
+angelegt, kein Anbieter gewählt, keine Zeile Code geschrieben und nichts am
+Server verändert.
+
+### 15.3 Was aus diesem Spike weiterlebt
+
+Drei Ergebnisse sind vom gewählten Weg unabhängig und gelten weiter:
+
+1. **Der Kernbefund zum Host.** Auf dem Server läuft die TWS mit Live-Konto,
+   und dieselbe Instanz überträgt für die Trade Automation Toolbox echte
+   Orders; „Read-Only API" ist deshalb bewusst aus. Jeder Prozess auf diesem
+   Rechner, der `127.0.0.1:7496` erreicht, kann Orders übermitteln. Das ist
+   der Grund, warum auch der Hosting-Weg den Server unerreichbar lässt.
+2. **Der Logging-Befund.** Der Webprozess ruft `configure_logging()` nicht
+   auf; die Schwärzung aus
+   [ADR 0044](../adr/0044-geheimnisse-an-der-log-senke-schwaerzen.md) wirkt
+   nur im CLI, `uvicorn` protokolliert im Klartext. Ein offener Mangel
+   unabhängig von jedem Fernzugang (Abschnitt 2.1, T14).
+3. **Die Härtung des Dienstes** (8.2 und 8.4): Dienstkonto ohne
+   Administratorrechte, lesende Datenbankrolle, Host-Prüfung, abgeschaltete
+   API-Dokumentation, Sicherheits-Header, Lastbegrenzung, Zugriffsprotokoll
+   in eine Datei. Sie nützt dem LAN-Dashboard, ob ein Fernzugang kommt oder
+   nicht.
+
+Die Dokumentationsbefunde D1 bis D10 (Abschnitt 2.3) bleiben ebenfalls
+gültig; sie hängen an keiner der beiden Entscheidungen.
+
+### 15.4 Wofür dieser Weg offen bleibt: die Fernwartung
+
+Die dringendste offene Frage dieses Spikes ist **O2: Wie schaltet sich der
+Projektinhaber heute auf den Server?** Sie steht nirgends im Repository. Ist
+dafür ein Port geöffnet, etwa für Remotedesktop, dann ist das unabhängig vom
+Dashboard das größere Risiko — und der hier beschriebene Weg ist die bessere
+Antwort darauf: Fernwartung ausschließlich über das Overlay, mit eigener,
+enger Zugriffsregel (Entscheidungspunkt E5).
+
+**Diese Frage ist mit der Zurückstellung nicht beantwortet.** Sie gehört
+geklärt, bevor sie jemand vergisst.
+
+### 15.5 Wo jemand wieder einsteigt
+
+Wer diesen Weg wieder aufgreift, für das Dashboard oder für die Fernwartung,
+geht in dieser Reihenfolge vor:
+
+1. **Offene Fragen O1 bis O12** beantworten (10.1), zuerst O2
+   (Fernwartungsweg), dann O5 und O7 (TWS und PostgreSQL nur Loopback) und
+   O3 (Windows-Stand, Datenträgerverschlüsselung).
+2. **Entscheidungspunkte E1 bis E6** vorlegen (10.2). E1 (LAN-Regel entfällt)
+   und E3 (keine Anmeldung im Dienst in Stufe 2) sind die folgenreichsten.
+3. **Anbieterprüfung** nach 8.1, Punkt 5: Ohne Knotensignierung durch eigene
+   Knoten fällt ein Anbieter aus; nach heutigem Stand bietet das einer, sonst
+   bleibt Selbsthosting (E4).
+4. **PoC nach Abschnitt 11**, Phasen 0 bis 2, mit AK1–AK20 und N1–N16.
+   Bestanden heißt: alle Abnahmekriterien erfüllt, alle Negativtests
+   gescheitert, die Prüfung von außen (11.5) ohne Befund, die
+   Loopback-Messung (11.4) durchgeführt und festgehalten.
+5. **Erst danach** ADR 0059 annehmen und die Umsetzung als eigenes Feature
+   schneiden: die Anwendungsänderungen aus 8.2 und 8.4, dazu Doc 14 um eine
+   Stufe und die Notfallkarte ergänzen.
+
+**Was sich seit dem 2026-09-06 geändert haben kann und vor der Wiederaufnahme
+zu prüfen ist:** ob der Dashboard-Dienst inzwischen auf dem Server
+eingerichtet wurde (Doc 14, Betriebszustand sagte „läuft noch nicht"); ob
+der Hosting-Weg (ADR 0060) angenommen und umgesetzt ist, denn dann liegt ein
+Teil der Härtung aus 8.4 bereits vor; und ob die Ist-Aufnahme in Abschnitt 2 noch zum Code
+passt.
+
+### 15.6 Verhältnis zum Hosting-Weg
+
+Die beiden Wege schließen sich **nicht** aus und lösen verschiedene Probleme:
+
+| | Dieser Spike (ADR 0059) | Hosting-Weg (ADR 0060) |
+|---|---|---|
+| Frage | Wie kommt der Nutzer sicher **an den Server**? | Wie kommt die **Anzeige** sicher zum Nutzer? |
+| Daten | bleiben auf dem Server | verlassen ihn als Snapshot |
+| Geräte | nur registrierte, mit Client-Software | beliebige, nur Browser |
+| Anmeldung | Identitätsanbieter mit MFA plus Geräteschlüssel | Anmeldung an der Kante, in Stufe 2 zusätzlich eine Passphrase |
+| Eingehend am Server | nichts | nichts |
+| Bleibt sinnvoll für | Fernwartung, und falls je ein Schreibpfad entsteht | das Dashboard |
+
+Käme je eine **schreibende** Funktion in die Anwendung, wäre der Weg dieses
+Spikes wieder der richtige: Ein Schreibpfad gehört nicht hinter einen
+gehosteten Snapshot, sondern hinter eine gerätegebundene Identität (8.5,
+Stufe 3).
+
+---
 
 ## Anhang — Zielbild (V1c, Stufe 2)
 

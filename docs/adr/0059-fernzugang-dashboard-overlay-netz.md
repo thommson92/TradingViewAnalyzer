@@ -1,6 +1,7 @@
 # ADR 0059: Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit
 
-- Status: Vorgeschlagen
+- Status: Vorgeschlagen — **am 2026-09-07 zurückgestellt** zugunsten von
+  ADR 0060 (Dashboard außerhalb des Servers); siehe den Nachtrag am Ende
 - Datum: 2026-09-06
 
 ## Kontext
@@ -324,3 +325,52 @@ Exposition" aus ADR 0049 wird zu „keine öffentliche Exposition; privater
 Fernzugang über das Overlay-Netz"; Punkt 3 aus ADR 0052 (Bindung an die
 LAN-Schnittstelle, Firewallregel im privaten Profil) wird durch Punkt 4
 oben ersetzt. ADR 0049 und ADR 0052 werden nicht rückwirkend geändert.
+
+---
+
+## Nachtrag vom 2026-09-07: zurückgestellt, nicht verworfen
+
+Dieses ADR wird **nicht weiterverfolgt, um das Dashboard erreichbar zu
+machen.** Der Projektinhaber hat am 2026-09-07 entschieden, stattdessen den
+umgekehrten Weg zu prüfen: Das Dashboard läuft außerhalb des Servers, und
+der Server lädt nach jedem Lauf nur ausgehend einen Snapshot hoch. Das steht
+in `docs/adr/0060-dashboard-ausserhalb-des-servers.md` und
+`docs/requirements/f12-externes-hosting-spike.md`; beide entstehen auf einem
+eigenen Branch und sind hier noch nicht verlinkt, weil sie mit diesem Stand
+noch nicht im Hauptzweig liegen.
+
+**Der Grund ist keine Schwäche dieses Entwurfs, sondern eine Anforderung,
+die er nicht erfüllt.** Der Overlay-Weg verlangt Client-Software auf jedem
+zugreifenden Gerät (Entscheidung Punkt 2, Konsequenz „Client-Software auf
+jedem Gerät"). Der Inhaber will von beliebigen Geräten aus zugreifen und
+hält eine einfache Anmeldung für ausreichend; der Zugriff auf die Anzeige
+ist ihm nicht sicherheitskritisch. Damit fällt das Vorzugskriterium, an dem
+dieser Weg seine Stärke hat — Gerätebindung —, als Nachteil ins Gewicht.
+
+**Was gültig bleibt und weiterverwendet wird:**
+
+- Die Ist-Aufnahme und das Threat Model des Spike-Berichts, insbesondere der
+  Kernbefund: Der Server ist der Handelsrechner, und jeder Prozess auf ihm,
+  der `127.0.0.1:7496` erreicht, kann Orders übermitteln. Er ist der Grund,
+  warum auch der Hosting-Weg den Server unerreichbar lässt.
+- Der Befund, dass der Webprozess **kein Logging konfiguriert** und die
+  Schwärzung aus [ADR 0044](0044-geheimnisse-an-der-log-senke-schwaerzen.md)
+  dort nicht wirkt. Er ist von beiden Wegen unabhängig und bleibt zu
+  beheben.
+- Die Härtung des Dienstes (Entscheidung Punkt 5) — Dienstkonto, Leserolle,
+  Host-Prüfung, abgeschaltete API-Dokumentation, Sicherheits-Header,
+  Lastbegrenzung. Sie nützt dem LAN-Dashboard unabhängig davon, ob je ein
+  Fernzugang entsteht.
+
+**Wofür dieses ADR ausdrücklich offen bleibt:** die **Fernwartung des
+Servers.** Wie der Inhaber sich heute auf den Server schaltet, steht
+nirgends im Repository (offene Frage O2 des Spike-Berichts); ist dafür ein
+Port geöffnet, wäre der hier beschriebene Weg die bessere Antwort darauf —
+mit eigener, enger Zugriffsregel und ohne Bezug zum Dashboard. Diese Frage
+ist mit der Zurückstellung **nicht** beantwortet.
+
+**Wiederaufnahme:** Wer diesen Weg wieder aufgreift, beginnt bei den
+offenen Fragen O1 bis O12 und den Entscheidungspunkten E1 bis E6 des
+Spike-Berichts; der Proof-of-Concept-Plan in dessen Abschnitt 11 ist
+unverändert gültig. Der Status dieses ADR bleibt „Vorgeschlagen" — es ist
+weder angenommen noch abgelehnt.

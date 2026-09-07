@@ -93,7 +93,7 @@ entsteht ein neues ADR, das das alte ausdruecklich abloest.
 | [0056](0056-kaufsignale-und-zusatzkriterien.md) | Fünf Kriterien, drei müssen erfüllt sein — Signal B ohne Gap-up-Klausel | Angenommen (ersetzt die 2-aus-3-Regel und die Signal-B-Formel aus ADR 0010 sowie die Signal-Teilwerte aus ADR 0045; Cooldown-Aussage durch [0057](0057-torbedingungen-und-episoden.md) abgelöst) |
 | [0057](0057-torbedingungen-und-episoden.md) | Torbedingungen an der Entscheidungskerze, Episoden statt Cooldown | Angenommen (Frische und Schlusskurs über EMA 20 als Filter ohne neue Signaltypen; Ereignis-Verkettung ersetzt den Cooldown; ATR-Stärkefilter geprüft und verworfen) |
 | [0058](0058-optionsvorschlaege-im-rueckblick.md) | Optionsvorschläge im Rückblick — modelliert, gekennzeichnet, gemessen | Angenommen (elf Festlegungen; Rohnotierungen ab sofort speichern; Skew erst messen, Strukturvergleich zunächst nur live; keine Zinsannahme; eigene Tabelle und Version) |
-| [0059](0059-fernzugang-dashboard-overlay-netz.md) | Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit | Vorgeschlagen (Neubewertung von ADR 0049 nach stabilem Betrieb; Grundlage: [Spike-Bericht F12](../requirements/f12-externer-zugriff-spike.md); Annahme erst nach bestandenem PoC; löst dann die Expositionsaussage aus 0049 ab und ersetzt Punkt 3 aus 0052) |
+| [0059](0059-fernzugang-dashboard-overlay-netz.md) | Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit | Vorgeschlagen, am 2026-09-07 **zurückgestellt** (Neubewertung von ADR 0049; Grundlage: [Spike-Bericht F12](../requirements/f12-externer-zugriff-spike.md), dort Abschnitt 15 zum Stand. Für das Dashboard nicht weiterverfolgt — der Weg verlangt Client-Software je Gerät —, für die Fernwartung des Servers offen. Weder angenommen noch abgelehnt) |
 
 ## Offene Entscheidungen
 
@@ -213,10 +213,13 @@ ADR, sobald die nötigen Informationen vorliegen:
   und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
   bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
   letzte Sprint-blockierende Frage dieser Liste beantwortet.
-  **Die angekündigte Neubewertung liegt vor** — als Spike-Bericht
+  **Die angekündigte Neubewertung läuft.** Der erste Ansatz — privater
+  Fernzugang für die eigenen Geräte über ein identitätsgebundenes
+  Overlay-Netz — steht als Spike-Bericht
   ([docs/requirements/f12-externer-zugriff-spike.md](../requirements/f12-externer-zugriff-spike.md))
   und als [ADR 0059](0059-fernzugang-dashboard-overlay-netz.md) mit Status
-  „Vorgeschlagen": privater Fernzugang für die eigenen Geräte über ein
-  identitätsgebundenes Overlay-Netz, keine öffentliche Erreichbarkeit,
-  Annahme erst nach bestandenem Proof of Concept. Bis dahin gilt ADR 0049
-  unverändert.
+  „Vorgeschlagen"; er ist am 2026-09-07 **zurückgestellt** worden, weil er
+  auf jedem zugreifenden Gerät Client-Software verlangt. Geprüft wird
+  stattdessen, das Dashboard außerhalb des Servers zu betreiben (ADR 0060,
+  eigener Branch). **Bis eine dieser Entscheidungen angenommen ist, gilt
+  ADR 0049 unverändert.**
