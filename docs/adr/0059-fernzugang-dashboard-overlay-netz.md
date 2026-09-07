@@ -1,7 +1,8 @@
 # ADR 0059: Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit
 
 - Status: Vorgeschlagen — **am 2026-09-07 zurückgestellt** zugunsten von
-  ADR 0060 (Dashboard außerhalb des Servers); siehe den Nachtrag am Ende
+  ADR 0060 (Dashboard außerhalb des Servers; eigener Branch, mit diesem
+  Stand noch nicht im Hauptzweig); siehe den Nachtrag am Ende
 - Datum: 2026-09-06
 
 ## Kontext
@@ -335,17 +336,17 @@ machen.** Der Projektinhaber hat am 2026-09-07 entschieden, stattdessen den
 umgekehrten Weg zu prüfen: Das Dashboard läuft außerhalb des Servers, und
 der Server lädt nach jedem Lauf nur ausgehend einen Snapshot hoch. Das steht
 in `docs/adr/0060-dashboard-ausserhalb-des-servers.md` und
-`docs/requirements/f12-externes-hosting-spike.md`; beide entstehen auf einem
-eigenen Branch und sind hier noch nicht verlinkt, weil sie mit diesem Stand
-noch nicht im Hauptzweig liegen.
+`docs/requirements/f12-externes-hosting-spike.md` auf dem Branch
+`feature/spike-dashboard-extern-hosting`; hier sind beide noch nicht
+verlinkt, weil sie mit diesem Stand noch nicht im Hauptzweig liegen.
 
 **Der Grund ist keine Schwäche dieses Entwurfs, sondern eine Anforderung,
 die er nicht erfüllt.** Der Overlay-Weg verlangt Client-Software auf jedem
 zugreifenden Gerät (Entscheidung Punkt 2, Konsequenz „Client-Software auf
 jedem Gerät"). Der Inhaber will von beliebigen Geräten aus zugreifen und
 hält eine einfache Anmeldung für ausreichend; der Zugriff auf die Anzeige
-ist ihm nicht sicherheitskritisch. Damit fällt das Vorzugskriterium, an dem
-dieser Weg seine Stärke hat — Gerätebindung —, als Nachteil ins Gewicht.
+ist ihm nicht sicherheitskritisch. Damit wird die Stärke dieses Wegs — die
+Beschränkung auf benannte Geräte — zum Ausschlussgrund.
 
 **Was gültig bleibt und weiterverwendet wird:**
 
@@ -363,14 +364,21 @@ dieser Weg seine Stärke hat — Gerätebindung —, als Nachteil ins Gewicht.
   Fernzugang entsteht.
 
 **Wofür dieses ADR ausdrücklich offen bleibt:** die **Fernwartung des
-Servers.** Wie der Inhaber sich heute auf den Server schaltet, steht
-nirgends im Repository (offene Frage O2 des Spike-Berichts); ist dafür ein
-Port geöffnet, wäre der hier beschriebene Weg die bessere Antwort darauf —
-mit eigener, enger Zugriffsregel und ohne Bezug zum Dashboard. Diese Frage
-ist mit der Zurückstellung **nicht** beantwortet.
+Servers.** Wie der Inhaber sich auf den Server schaltet, stand am
+2026-09-06 nirgends im Repository (offene Frage O2 des Spike-Berichts); ist
+dafür ein Port geöffnet, wäre der hier beschriebene Weg die bessere Antwort
+darauf — mit eigener, enger Zugriffsregel und ohne Bezug zum Dashboard.
+**Entscheidung Punkt 4 deckt das nicht:** Sie erlaubt nur den Port des
+Dashboards und verlangt, dass der Server-Knoten selbst nichts erreicht. Eine
+Fernwartung über dasselbe Overlay braucht eine eigene Regel und eine eigene
+Entscheidung. Diese Frage ist mit der Zurückstellung **nicht** beantwortet.
 
-**Wiederaufnahme:** Wer diesen Weg wieder aufgreift, beginnt bei den
-offenen Fragen O1 bis O12 und den Entscheidungspunkten E1 bis E6 des
-Spike-Berichts; der Proof-of-Concept-Plan in dessen Abschnitt 11 ist
-unverändert gültig. Der Status dieses ADR bleibt „Vorgeschlagen" — es ist
-weder angenommen noch abgelehnt.
+**Wiederaufnahme:** Den vollständigen Stand — was fertig ist, was nicht
+begonnen wurde und in welcher Reihenfolge jemand einsteigt — hält
+**Abschnitt 15 des Spike-Berichts** fest. Kurz: bei den offenen Fragen O1
+bis O12 beginnen (O8 ist durch die Zurückstellung beantwortet), die
+Entscheidungspunkte E1 bis E6 vorlegen und die Variante V2 mitbewerten, die
+der Bericht für genau diesen Fall als Ausweichweg vorgesehen hatte; der
+Proof-of-Concept-Plan in Abschnitt 11 ist unverändert gültig. Der Status
+dieses ADR bleibt „Vorgeschlagen" — es ist weder angenommen noch
+abgelehnt.
