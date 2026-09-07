@@ -13,13 +13,13 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 
 from ai_trading_analyst.domain.analysis import (
     AnalysisRun,
     MarketDataProvider,
-    MarketDataProviderError,
     MarketDataUnavailableError,
     RunStatus,
     UnitOfWork,
@@ -65,12 +65,28 @@ BACKTEST_PARAMS = BacktestParameters(
 )
 
 
+class _BestandNichtLesbar:
+    """Ein Anbieter, dem die Quelle wegbricht -- nicht eine Aktie fehlt.
+
+    ``MarketDataUnavailableError`` ist **Unterklasse** von
+    ``MarketDataProviderError``. Genau deshalb muss der Test hier ansetzen und
+    nicht an der Fabrik: Eine Fabrik, die wirft, prueft nur, dass ein
+    ungefangener Fehler ungefangen bleibt.
+    """
+
+    def list_stocks(self) -> tuple[object, ...]:  # pragma: no cover -- nicht gebraucht
+        return ()
+
+    def get_candle_series(self, stock: object) -> object:
+        raise MarketDataUnavailableError("Der Kursbestand ist gerade nicht lesbar.")
+
+
 def quellen_mit(
     symbole: tuple[str, ...] = ("AAPL", "MSFT"),
     *,
     laeufe: tuple[AnalysisRun, ...] = (),
     ohne_chart: frozenset[str] = frozenset(),
-    chart_ausfall: Exception | None = None,
+    bestand_nicht_lesbar: bool = False,
 ) -> tuple[Exportquellen, FakeUnitOfWork]:
     stocks = FakeStockRepository()
     aktien = tuple(make_stock(symbol) for symbol in symbole)
@@ -95,8 +111,8 @@ def quellen_mit(
     reihen = {aktie.symbol: make_series(300, candidate=False) for aktie in aktien}
 
     def marktdaten() -> MarketDataProvider:
-        if chart_ausfall is not None:
-            raise chart_ausfall
+        if bestand_nicht_lesbar:
+            return cast(MarketDataProvider, _BestandNichtLesbar())
         return FakeMarketDataProvider(aktien, reihen, error_symbols=ohne_chart)
 
     def uow_factory() -> UnitOfWork:
@@ -155,8 +171,10 @@ class TestAufbau:
 
     def test_jede_datei_ist_gueltiges_json(self) -> None:
         quellen, _ = quellen_mit(laeufe=(lauf(),))
-        for pfad, inhalt in baum(quellen).items():
-            json.loads(inhalt.decode("utf-8")), pfad
+        dateien = baum(quellen)
+        assert dateien, "Der Snapshot war leer -- dann prueft die Schleife nichts."
+        for pfad, inhalt in dateien.items():
+            assert json.loads(inhalt.decode("utf-8")) is not None, pfad
 
 
 class TestManifest:
@@ -209,12 +227,13 @@ class TestSymbolnamen:
     def test_zwei_symbole_mit_gleichem_namen_kollidieren_nicht(self) -> None:
         """``BRK B`` und ``BRK-B`` ergaeben denselben Verzeichnisnamen."""
         quellen, _ = quellen_mit(("BRK B", "BRK-B"))
-        manifest = json.loads(baum(quellen)[MANIFEST_PFAD].decode("utf-8"))
-        namen = manifest["symbols"]
-        assert len(set(namen.values())) == 2
-        for symbol, name in namen.items():
-            assert f"data/stocks/{name}/chart.json" in baum(quellen)
-            assert symbol in namen
+        dateien = baum(quellen)
+        namen = json.loads(dateien[MANIFEST_PFAD].decode("utf-8"))["symbols"]
+
+        assert set(namen) == {"BRK B", "BRK-B"}
+        assert len(set(namen.values())) == 2, "Zwei Aktien im selben Verzeichnis"
+        for name in namen.values():
+            assert f"data/stocks/{name}/chart.json" in dateien
 
     def test_die_zuordnung_steht_im_manifest(self) -> None:
         """Sonst muesste die Oberflaeche dieselbe Regel ein zweites Mal
@@ -243,13 +262,17 @@ class TestFehlendeCharts:
         assert manifest["counts"]["charts"] == 1
 
     def test_ein_datenbankabriss_bricht_den_export_ab(self) -> None:
-        """Ausdruecklich anders als eine fehlende Kursreihe: Wer die Datenbank
-        nicht lesen kann, weiss nicht, ob Charts fehlen -- er weiss nur, dass
-        er es nicht weiss. Ein Snapshot ohne Charts waere eine Behauptung."""
-        quellen, _ = quellen_mit(
-            chart_ausfall=MarketDataUnavailableError("Bestand nicht lesbar")
-        )
-        with pytest.raises(MarketDataProviderError):
+        """Ausdruecklich anders als eine fehlende Kursreihe.
+
+        Wer die Datenbank nicht lesen kann, weiss nicht, ob Charts fehlen --
+        er weiss nur, dass er es nicht weiss. Liefe der Export durch, schriebe
+        er ein vollstaendiges Manifest mit null Charts, und der Schreiber
+        entfernte danach jede bisher exportierte Chartdatei als verwaist:
+        Draussen stuende ein Stand, der wie ein regulaerer aussieht und keinen
+        einzigen Chart hat.
+        """
+        quellen, _ = quellen_mit(bestand_nicht_lesbar=True)
+        with pytest.raises(MarketDataUnavailableError):
             baum(quellen)
 
 

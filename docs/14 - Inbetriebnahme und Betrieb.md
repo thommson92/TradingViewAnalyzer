@@ -1039,10 +1039,17 @@ Lang und zufällig, nicht ausgedacht — sie wird nie getippt, sondern kommt
 aus dem Passwortmanager:
 
 ```powershell
-# 32 zufällige Bytes als Base64. Das Ergebnis in den Passwortmanager, und
-# nur dorthin.
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
+# 32 Bytes aus dem kryptographischen Zufallsgenerator, als Base64.
+# Das Ergebnis in den Passwortmanager, und nur dorthin.
+$bytes = [byte[]]::new(32)
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+[Convert]::ToBase64String($bytes)
 ```
+
+**Nicht `Get-Random`.** Der zieht aus `System.Random` — einem Generator für
+Simulationen, nicht für Geheimnisse. Für eine Passphrase, die das einzige
+Schloss vor den Daten ist, ist der Unterschied der ganze Punkt. Wer den
+Passwortmanager selbst erzeugen lässt, ist ebenso richtig bedient.
 
 Danach in die `.env` im Projektwurzelverzeichnis, zu den übrigen
 `ATA_`-Werten:
@@ -1118,6 +1125,12 @@ Get-Content var\dashboard\data\manifest.head.json
 Select-String -Path var\dashboard\data\* -Pattern "AAPL" -List
 ```
 
+**Rechnen Sie mit gut einer Minute.** Der Export baut je Aktie den
+Validierungschart neu — dieselbe Indikatorrechnung wie im Screener, rund
+2.500 Kerzen —, und das ist der Löwenanteil der Laufzeit. Verschlüsseln und
+Schreiben fallen daneben kaum ins Gewicht. Gemessen auf dem
+Entwicklungsrechner: rund 0,4 Sekunden je Aktie.
+
 **Abnahmekriterien dieser Stufe:** Die letzte Suche findet nichts. Der Kopf
 nennt `PBKDF2-HMAC-SHA256`, `AES-256-GCM` und mindestens 600.000 Runden. Der
 zweite Aufruf aus Schritt 3 schreibt nur das Manifest neu. Und der
@@ -1127,11 +1140,23 @@ Pfad zu Dateiname.
 
 ## Schritt 5 — Im Tageslauf einschalten (erst nach Schritt 4)
 
-In `config/default.yaml` unter `dashboard_export`: `target: directory` und
-`directory: var/dashboard`. Danach schreibt der Tageslauf den Baum am Ende
-jedes Laufs selbst. Ein Fehlschlag hält den Lauf nicht an — er kommt als
-eigene Telegram-Meldung „Dashboard nicht aktualisiert" und steht im
-Protokoll.
+In `config/default.yaml` unter `dashboard_export` das Ziel eintragen
+(`directory: var/dashboard`); **geschaltet wird über die Aufgabenplanung**,
+wie bei den Anbietern auch. Dem Eintrag aus Stufe F kommt dafür ein Argument
+hinzu:
+
+```
+--dashboard-export directory
+```
+
+Danach schreibt der Tageslauf den Baum am Ende jedes Laufs selbst. Ein
+Fehlschlag hält den Lauf nicht an — er kommt als eigene Telegram-Meldung
+„Dashboard nicht aktualisiert" und steht im Protokoll.
+
+**Das ist zugleich der Notausschalter:** `--dashboard-export none` in der
+Aufgabenplanung, speichern, fertig. Der Tageslauf läuft weiter, nur der
+Snapshot bleibt aus. Die Konfigurationsdatei wird dafür nicht angefasst — sie
+ist im öffentlichen Repository versioniert.
 
 **Was hier ausdrücklich noch nicht steht:** Anbieterwahl, Konto, Token,
 Zugriffsregel, Upload und die Notfallkarte dazu. Das ist Gegenstand des

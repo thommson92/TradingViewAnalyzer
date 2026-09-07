@@ -38,6 +38,15 @@ out/
 /artifacts/
 /logs/
 /backups/
+# Der Datenbaum des externen Dashboards und sein Zustandsvermerk (ADR 0060).
+# **Das ist kein Aufraeumen, sondern eine Sicherheitszeile.** Dieses
+# Repository ist oeffentlich (ADR 0031). Unter var/ liegt in Stufe 1 der
+# vollstaendige Export im Klartext -- Berichte, Kursreihen, Watchlist -- und
+# in Stufe 2 immer noch die Zustandsdatei mit der Zuordnung von Pfad zu
+# opakem Dateinamen, also genau das, was die Verschluesselung der Namen
+# verbergen soll. Ein "git add -A" auf dem Server, und beides stuende
+# oeffentlich.
+/var/
 
 # --- Betriebssystem / Editor ---
 # Dateien wie "strategies 2.py": Doppelgaenger, die macOS beim Synchronisieren

@@ -331,6 +331,10 @@ class TestLaufdetail:
     def test_unbekannter_lauf_liefert_404(self, client: TestClient) -> None:
         antwort = client.get(f"/api/v1/analysis-runs/{uuid.uuid4()}")
         assert antwort.status_code == 404
+        # Auch der Wortlaut: Seit der Zusammenbau der Antworten in ``views``
+        # steht und die Router ihn nur noch uebersetzen, ist die Meldung das
+        # Einzige, was ein Umbau dort stillschweigend veraendern koennte.
+        assert antwort.json()["detail"] == "AnalysisRun nicht gefunden."
 
 
 class TestBerichte:
@@ -384,7 +388,9 @@ class TestBerichte:
         ]
 
     def test_berichte_eines_unbekannten_laufs_liefern_404(self, client: TestClient) -> None:
-        assert client.get(f"/api/v1/analysis-runs/{uuid.uuid4()}/reports").status_code == 404
+        antwort = client.get(f"/api/v1/analysis-runs/{uuid.uuid4()}/reports")
+        assert antwort.status_code == 404
+        assert antwort.json()["detail"] == "AnalysisRun nicht gefunden."
 
     def test_dokument_kommt_unveraendert_zurueck(
         self, client: TestClient, uow_factory: UowFactory
@@ -476,7 +482,9 @@ class TestHistorieJeAktie:
         )
 
     def test_unbekannte_aktie_liefert_404(self, client: TestClient) -> None:
-        assert client.get("/api/v1/stocks/GIBTESNICHT/reports").status_code == 404
+        antwort = client.get("/api/v1/stocks/GIBTESNICHT/reports")
+        assert antwort.status_code == 404
+        assert antwort.json()["detail"] == "Aktie nicht gefunden."
 
 
 def _messung(
@@ -610,6 +618,7 @@ class TestOptionsbacktestUeberDieApi:
         antwort = client.get(f"/api/v1/options-backtests/{uuid.uuid4()}")
 
         assert antwort.status_code == 404
+        assert antwort.json()["detail"] == "Messung nicht gefunden."
 
 
 class TestBacktestJeAktie:
@@ -655,7 +664,14 @@ class TestBacktestJeAktie:
         assert antwort["pooled"] is None
 
     def test_eine_unbekannte_aktie_ist_ein_404(self, client: TestClient) -> None:
-        assert client.get("/api/v1/stocks/GIBTESNICHT/backtest").status_code == 404
+        antwort = client.get("/api/v1/stocks/GIBTESNICHT/backtest")
+        assert antwort.status_code == 404
+        assert antwort.json()["detail"] == "Aktie nicht gefunden."
+
+    def test_eine_unbekannte_aktie_am_chart_ist_ein_404(self, client: TestClient) -> None:
+        antwort = client.get("/api/v1/stocks/GIBTESNICHT/chart")
+        assert antwort.status_code == 404
+        assert antwort.json()["detail"] == "Aktie nicht gefunden."
 
     def test_ohne_kerzen_im_bestand_ist_der_chart_ein_404_kein_500(
         self, client: TestClient, uow_factory: UowFactory

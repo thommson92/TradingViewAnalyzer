@@ -21,8 +21,11 @@ Vermutung.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Iterable
+import time
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -40,6 +43,15 @@ from .writer import Exportzustand, Schreibbericht, Verzeichnisschreiber
 _logger = get_logger(__name__)
 
 SALT_LAENGE = 32
+
+SPERRE_VERFAELLT = timedelta(hours=1)
+"""Ab wann eine liegengebliebene Sperre uebergangen wird.
+
+Ein Export dauert Minuten, nicht Stunden. Eine aeltere Sperre stammt
+deshalb nicht von einem laufenden Vorgang, sondern von einem abgestuerzten
+-- und eine Sperre, die niemand mehr aufhebt, waere schlimmer als keine:
+Sie hielte den Tageslauf dauerhaft vom Export ab, und zwar still.
+"""
 MANIFEST_PFAD = "data/manifest.json"
 FORMAT_VERSION = 1
 """Beide muessen mit ``presentation.export`` uebereinstimmen.
@@ -74,6 +86,52 @@ class SnapshotPublisher:
         self._snapshot = snapshot
         self._ziel = ziel
 
+    @contextmanager
+    def _sperre(self) -> Iterator[None]:
+        """Verhindert zwei gleichzeitige Exporte in dasselbe Verzeichnis.
+
+        Der Tageslauf schreibt am Ende jedes Laufs, und die Kommandozeile
+        kann jederzeit dazwischenkommen -- auf diesem Server ist genau das
+        schon vorgekommen. Zwei Laeufe zugleich loeschen sich zwar nichts
+        weg (die Namen sind pfadstabil), schreiben aber zwei verschiedene
+        Manifeste: Der Browser folgt dem, das gewonnen hat, und faende bei
+        jeder Datei des anderen Laufs eine abweichende Pruefsumme. Das heilt
+        beim naechsten Lauf -- sieht dazwischen aber genau wie der Angriff
+        aus, gegen den die Pruefsumme steht. Ein Fehlalarm an dieser Stelle
+        ist teurer als eine Sperre.
+        """
+        pfad = self._ziel.zustandsdatei.with_name(self._ziel.zustandsdatei.name + ".lock")
+        pfad.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            griff = os.open(pfad, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if not self._sperre_ist_verfallen(pfad):
+                raise DashboardPublisherError(
+                    f"Ein anderer Export schreibt gerade nach {self._ziel.wurzel}."
+                ) from None
+            _logger.warning(
+                "Liegengebliebene Sperre %s wird uebergangen -- aelter als %s.",
+                pfad,
+                SPERRE_VERFAELLT,
+            )
+            pfad.unlink(missing_ok=True)
+            griff = os.open(pfad, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(griff, f"{os.getpid()} {datetime.now(UTC).isoformat()}\n".encode())
+            os.close(griff)
+            yield
+        finally:
+            pfad.unlink(missing_ok=True)
+
+    @staticmethod
+    def _sperre_ist_verfallen(pfad: Path) -> bool:
+        try:
+            alter = datetime.now(UTC) - datetime.fromtimestamp(pfad.stat().st_mtime, tz=UTC)
+        except OSError:
+            # Gerade verschwunden -- dann ist sie ohnehin keine mehr.
+            return True
+        return alter > SPERRE_VERFAELLT
+
     def publish(self) -> None:
         """Setzt den Port ``DashboardPublisher`` um.
 
@@ -96,13 +154,26 @@ class SnapshotPublisher:
                 konnte. Der Aufrufer im Tageslauf isoliert das; das Ergebnis
                 des Laufs steht zu diesem Zeitpunkt bereits in der Datenbank.
         """
+        begonnen = time.monotonic()
+        _logger.info(
+            "Dashboard-Export beginnt: Ziel %s, %s, %s.",
+            self._ziel.wurzel,
+            "verschluesselt" if self._ziel.passphrase is not None else "Klartext",
+            "Vollexport" if voll else "nur Aenderungen",
+        )
         try:
-            zustand = self._zustand()
-            if voll:
-                zustand.dateien.clear()
-            schreiber = self._schreiber(zustand)
-            bericht = schreiber.schreibe(self._snapshot(), zustand)
-            zustand.speichere(self._ziel.zustandsdatei)
+            with self._sperre():
+                zustand = self._zustand()
+                if voll:
+                    zustand.dateien.clear()
+                schreiber = self._schreiber(zustand)
+                bericht = schreiber.schreibe(self._snapshot(), zustand)
+                zustand.speichere(self._ziel.zustandsdatei)
+            _logger.info(
+                "Dashboard-Export fertig nach %.1f s: %s",
+                time.monotonic() - begonnen,
+                bericht.als_text(),
+            )
             return bericht
         except KryptoKonfigurationError as fehler:
             raise DashboardPublisherError(

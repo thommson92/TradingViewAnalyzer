@@ -26,17 +26,61 @@ function alsFehlertext(ursache: unknown): string {
   return ursache instanceof Error ? ursache.message : String(ursache);
 }
 
+const HOECHSTSTAND = 'ata-hoechster-stand';
+
+/**
+ * Merkt sich den juengsten je gesehenen Export und meldet einen Rueckschritt.
+ *
+ * Wogegen das steht: Wer beim Anbieter schreiben darf, kann einen
+ * **vollstaendigen alten Stand** zurueckspielen -- Manifest und Dateien
+ * zusammen. Der ist in sich stimmig, jede Pruefsumme passt, und die
+ * Verschluesselung merkt nichts davon. Zu erkennen ist er nur daran, dass er
+ * aelter ist als der zuletzt gesehene.
+ *
+ * **Was das nicht leistet:** Der Vermerk liegt im Browser. Ein anderes
+ * Geraet, ein privates Fenster oder geloeschte Websitedaten fangen bei null
+ * an, und wer den Vermerk loescht, sieht die Warnung nicht mehr. Das ist ein
+ * Hinweis und kein Beweis -- der Beweis waere ein Anker, den der Anbieter
+ * nicht schreiben kann, und den gibt es hier nicht.
+ */
+function pruefeRueckschritt(exportiertAm: string): string | null {
+  let bekannt: string | null = null;
+  try {
+    bekannt = window.localStorage.getItem(HOECHSTSTAND);
+    if (bekannt === null || exportiertAm > bekannt) {
+      window.localStorage.setItem(HOECHSTSTAND, exportiertAm);
+    }
+  } catch {
+    // Kein Speicher, kein Hinweis -- aber auch kein Grund, den Stand nicht
+    // anzuzeigen. Ein privates Fenster ist keine Fehlkonfiguration.
+    return null;
+  }
+  if (bekannt !== null && exportiertAm < bekannt) {
+    return (
+      `Dieser Stand ist aelter als der zuletzt gesehene (${bekannt}). ` +
+      'Das kann an einem zurueckgespielten Deployment liegen -- oder daran, ' +
+      'dass der Server seither nichts Neues hochgeladen hat und jemand eine ' +
+      'aeltere Fassung wiederhergestellt hat. Nachsehen lohnt sich.'
+    );
+  }
+  return null;
+}
+
 export function Stand({ baum }: { baum: Datenbaum }): ReactNode {
   const manifest = baum.manifest;
   const lauf =
     manifest.run_completed_at ?? manifest.run_started_at ?? 'noch kein abgeschlossener Lauf';
+  const [rueckschritt] = useState(() => pruefeRueckschritt(manifest.exported_at));
   return (
-    <p className="stand">
-      Stand: Lauf vom <strong>{lauf}</strong>, exportiert {manifest.exported_at}
-      {manifest.stocks_without_chart.length > 0
-        ? ` -- ohne Chart: ${manifest.stocks_without_chart.join(', ')}`
-        : ''}
-    </p>
+    <>
+      <p className="stand">
+        Stand: Lauf vom <strong>{lauf}</strong>, exportiert {manifest.exported_at}
+        {manifest.stocks_without_chart.length > 0
+          ? ` -- ohne Chart: ${manifest.stocks_without_chart.join(', ')}`
+          : ''}
+      </p>
+      {rueckschritt !== null ? <p className="stand fehler">{rueckschritt}</p> : null}
+    </>
   );
 }
 

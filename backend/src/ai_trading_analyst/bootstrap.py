@@ -113,7 +113,11 @@ from ai_trading_analyst.infrastructure.persistence.session import (
 )
 from ai_trading_analyst.infrastructure.persistence.stored_bar_source import StoredBarSource
 from ai_trading_analyst.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from ai_trading_analyst.infrastructure.publishing import Exportziel, SnapshotPublisher
+from ai_trading_analyst.infrastructure.publishing import (
+    MINDEST_ITERATIONEN,
+    Exportziel,
+    SnapshotPublisher,
+)
 from ai_trading_analyst.infrastructure.throttle import Drossel
 from ai_trading_analyst.infrastructure.watchlists import load_watchlist_directory
 from ai_trading_analyst.presentation.api.app import create_app
@@ -689,6 +693,26 @@ def build_dashboard_publisher(
         if einstellungen.state_file
         else verzeichnis.with_name(verzeichnis.name + ".zustand.json")
     )
+    if zustandsdatei.is_relative_to(verzeichnis):
+        # Die Zustandsdatei traegt die Zuordnung von Pfad zu opakem Namen --
+        # genau das Geheimnis, das die Verschluesselung der Dateinamen
+        # schuetzt. Laege sie im veroeffentlichten Verzeichnis, ginge sie beim
+        # naechsten Upload mit hinaus, und die Opazitaet waere vollstaendig
+        # hin. Das ist kein Hinweis wert, sondern ein Abbruch.
+        raise ValueError(
+            f"dashboard_export.state_file ({zustandsdatei}) liegt im "
+            f"veroeffentlichten Verzeichnis ({verzeichnis}). Sie enthaelt die "
+            "Zuordnung von Pfad zu Dateiname und darf den Server nicht verlassen."
+        )
+    if einstellungen.encrypt and einstellungen.pbkdf2_iterations < MINDEST_ITERATIONEN:
+        # Hier und nicht erst in der Ableitung: Der Tageslauf baut diesen
+        # Schritt vor dem halbstuendigen Backfill, damit eine
+        # Fehlkonfiguration auffaellt, bevor gerechnet wird -- und nicht erst
+        # am Ende, wenn der Lauf fertig ist.
+        raise ValueError(
+            f"dashboard_export.pbkdf2_iterations ist {einstellungen.pbkdf2_iterations}; "
+            f"verlangt sind mindestens {MINDEST_ITERATIONEN} (ADR 0060, Punkt 6)."
+        )
     passphrase = (
         secrets.require("dashboard_export_passphrase") if einstellungen.encrypt else None
     )

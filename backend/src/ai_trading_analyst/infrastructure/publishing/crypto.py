@@ -35,10 +35,14 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 MINDEST_ITERATIONEN = 600_000
 """Untergrenze der PBKDF2-Runden (ADR 0060, Entscheidung Punkt 6).
 
-Der Browser erzwingt sie ein zweites Mal. Ohne diese zweite Pruefung koennte
-wer den Klartextkopf schreiben darf die Ableitung auf tausend Runden
-herunterdrehen und damit eine Passphrase angreifbar machen, die fuer 600.000
-ausgelegt war.
+Der Browser erzwingt sie ein zweites Mal -- und wogegen das wirkt, ist genau
+zu benennen. **Nicht** gegen jemanden, der den Klartextkopf umschreibt: Der
+Arbeitsfaktor des gespeicherten Chiffrats steht fest, sobald hier
+verschluesselt wurde; wer nur den Kopf aendert, erreicht eine falsche
+Ableitung und damit einen Ausfall. Wohl aber gegen **diese Seite**: gegen
+eine Konfiguration, die zu niedrig gesetzt wurde, und gegen eine aeltere
+Fassung des Exporters. Die Pruefung im Browser steht deshalb dort, wo der
+Server sie nicht abschalten kann.
 """
 
 SCHLUESSELLAENGE = 32
@@ -184,6 +188,21 @@ class Verschluesselung:
         return hmac.new(self._namensschluessel, pfad.encode("utf-8"), "sha256").hexdigest()[:32]
 
     def _zusatzdaten(self, pfad: str) -> bytes:
+        """Format, Baumkennung und Pfad, durch Zeilenumbrueche getrennt.
+
+        Die Trennung muss **eindeutig** sein: Enthielte eine Kennung oder ein
+        Pfad selbst einen Zeilenumbruch, ergaeben zwei verschiedene Tripel
+        dieselben Zusatzdaten, und die Bindung an den Pfad waere dort
+        aufgehoben. Heute kann das nicht vorkommen -- die Kennung ist eine
+        UUID, und ``dateisicherer_name`` laesst nur Buchstaben, Ziffern,
+        ``_`` und ``-`` durch. Erzwungen war es bisher trotzdem nirgends, und
+        eine Eigenschaft, auf der die Sicherheit steht, sollte keine blosse
+        Beobachtung sein.
+        """
+        if "\n" in self._baum_id or "\n" in pfad:
+            raise KryptoKonfigurationError(
+                "Zeilenumbruch in Baumkennung oder Pfad -- die Zusatzdaten waeren mehrdeutig."
+            )
         return f"{self._format}\n{self._baum_id}\n{pfad}".encode()
 
     def verschluessele(self, pfad: str, klartext: bytes) -> bytes:

@@ -88,11 +88,18 @@ def reports_of_run(uow: UnitOfWork, run_id: UUID) -> list[ReportSummaryResponse]
     return [ReportSummaryResponse.from_domain(bericht) for bericht in berichte]
 
 
-def _aktie(uow: UnitOfWork, symbol: str) -> Stock:
-    aktie = uow.stocks.get_by_symbol(symbol)
-    if aktie is None:
+def aktie(uow: UnitOfWork, symbol: str) -> Stock:
+    """Die Aktie zu einem Symbol -- normalisiert nachgeschlagen.
+
+    Oeffentlich, weil der Chart-Endpunkt sie ebenfalls braucht: Er holt seine
+    Kerzen danach beim Marktdatenanbieter und passt deshalb in keine der
+    Antwortfunktionen. Ein zweites Nachschlagen dort haette denselben
+    404-Wortlaut ein zweites Mal aufgeschrieben.
+    """
+    gefunden = uow.stocks.get_by_symbol(normalisiertes_symbol(symbol))
+    if gefunden is None:
         raise NotFoundError("Aktie nicht gefunden.")
-    return aktie
+    return gefunden
 
 
 def reports_of_stock(
@@ -105,7 +112,7 @@ def reports_of_stock(
     eine Auskunft.
     """
     gesucht = normalisiertes_symbol(symbol)
-    _aktie(uow, gesucht)
+    aktie(uow, gesucht)
     reports = uow.stock_reports.list_for_symbol(gesucht, limit=limit, offset=offset)
     return Page(
         items=[ReportSummaryResponse.from_domain(report) for report in reports],
@@ -129,10 +136,10 @@ def stock_backtest(
     er entsteht im Tageslauf und haengt am Messlauf nicht.
     """
     gesucht = normalisiertes_symbol(symbol)
-    aktie = _aktie(uow, gesucht)
+    gefundene_aktie = aktie(uow, gesucht)
     signal_backtests = [
         SignalBacktestResponse.from_domain(ergebnis)
-        for ergebnis in uow.backtest_results.list_for_stock(aktie.id)
+        for ergebnis in uow.backtest_results.list_for_stock(gefundene_aktie.id)
     ]
     messung_id = (
         measurement_id
@@ -148,8 +155,8 @@ def stock_backtest(
             pooled=None,
             trades=[],
         )
-    kombinationen = uow.options_backtest_results.list_for_stock(messung_id, aktie.id)
-    trades = uow.options_backtest_results.list_trades_for_stock(messung_id, aktie.id)
+    kombinationen = uow.options_backtest_results.list_for_stock(messung_id, gefundene_aktie.id)
+    trades = uow.options_backtest_results.list_trades_for_stock(messung_id, gefundene_aktie.id)
     kopf = uow.options_backtest_results.get_measurement(messung_id)
     if kopf is None:
         raise NotFoundError("Messung nicht gefunden.")
@@ -167,7 +174,7 @@ def stock_backtest(
         ],
         # Auch ohne einen einzigen Trade: Die Zeile sagt dann
         # ``INSUFFICIENT_DATA`` statt zu fehlen, und das ist eine Auskunft.
-        pooled=OptionsStockRowResponse.from_domain(aktie.id, gesucht, gepoolt),
+        pooled=OptionsStockRowResponse.from_domain(gefundene_aktie.id, gesucht, gepoolt),
         trades=[
             OptionsTradeResponse.from_domain(kombination, trade)
             for kombination, trade in trades

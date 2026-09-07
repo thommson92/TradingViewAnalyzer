@@ -134,3 +134,46 @@ class TestFehler:
         """Die Portfassung ohne Rueckgabewert; der Bericht steht im Protokoll."""
         publisher(tmp_path).publish()
         assert (tmp_path / "public" / "data" / "manifest.head.json").is_file()
+
+
+class TestSperre:
+    def test_ein_zweiter_export_wird_abgewiesen(self, tmp_path: Path) -> None:
+        """Zwei gleichzeitige Laeufe schrieben zwei verschiedene Manifeste.
+
+        Der Browser folgte dem, das gewonnen hat, und faende bei jeder Datei
+        des anderen Laufs eine abweichende Pruefsumme -- ein Fehlalarm, der
+        genau wie der Angriff aussieht, gegen den die Pruefsumme steht.
+        """
+        sperre = tmp_path / "zustand.json.lock"
+        sperre.parent.mkdir(parents=True, exist_ok=True)
+        sperre.write_text("999 laeuft", encoding="utf-8")
+
+        with pytest.raises(DashboardPublisherError, match="anderer Export"):
+            publisher(tmp_path).schreibe_baum()
+
+    def test_die_sperre_wird_danach_wieder_freigegeben(self, tmp_path: Path) -> None:
+        veroeffentlicher = publisher(tmp_path)
+        veroeffentlicher.schreibe_baum()
+        assert not (tmp_path / "zustand.json.lock").exists()
+        veroeffentlicher.schreibe_baum()
+
+    def test_auch_nach_einem_fehler_bleibt_keine_sperre_liegen(self, tmp_path: Path) -> None:
+        """Eine Sperre, die niemand mehr aufhebt, waere schlimmer als keine:
+        Sie hielte den Tageslauf still vom Export ab."""
+        with pytest.raises(DashboardPublisherError):
+            publisher(tmp_path, iterationen=1000).schreibe_baum()
+        assert not (tmp_path / "zustand.json.lock").exists()
+
+    def test_eine_liegengebliebene_sperre_wird_uebergangen(self, tmp_path: Path) -> None:
+        import os
+        import time
+
+        sperre = tmp_path / "zustand.json.lock"
+        sperre.parent.mkdir(parents=True, exist_ok=True)
+        sperre.write_text("999 abgestuerzt", encoding="utf-8")
+        alt = time.time() - 7200
+        os.utime(sperre, (alt, alt))
+
+        bericht = publisher(tmp_path).schreibe_baum()
+
+        assert bericht.geschrieben == 1

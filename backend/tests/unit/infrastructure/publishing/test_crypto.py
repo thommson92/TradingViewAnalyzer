@@ -85,11 +85,19 @@ class TestHinUndRueckweg:
         assert krypto.entschluessele("data/leer.json", chiffrat) == b""
 
     def test_zwei_durchgaenge_ergeben_verschiedene_chiffrate(self) -> None:
-        """Zufaellige Nonce je Schreibvorgang.
+        """Zufaellige Nonce je Schreibvorgang -- die Bedingung von GCM.
 
-        Deterministisches Chiffrat verriete dem Anbieter, dass sich eine
-        Datei zwischen zwei Exporten nicht geaendert hat -- und ueber die
-        Zeit, an welchen Tagen eine Aktie neu bewertet wurde.
+        Dieselbe Nonce zweimal unter demselben Schluessel bricht AES-GCM
+        vollstaendig: Aus zwei Chiffraten wird der Schluesselstrom, und mit
+        ihm faellt auch die Authentizitaet. Das ist der Grund, und es ist
+        Grund genug.
+
+        **Was diese Zufaelligkeit nicht leistet**, obwohl es naheliegt, es ihr
+        zuzuschreiben: Sie verbirgt nicht, wann eine Datei sich geaendert
+        hat. Der Schreiber laesst unveraenderte Dateien liegen, und die Namen
+        sind stabil -- der Anbieter sieht also sehr wohl, welche Datei an
+        welchem Tag neue Bytes bekam. Das ist der Preis dafuer, nicht bei
+        jedem Lauf alles hochzuladen, und es steht als Restrisiko im ADR.
         """
         krypto = verschluesselung()
         erst = krypto.verschluessele("data/x.json", b"gleich")
@@ -244,3 +252,22 @@ class TestFormat:
     def test_gleicher_inhalt_ergibt_gleiche_bytes(self) -> None:
         """Ohne ``mtime=0`` stuende in jeder Datei der Zeitpunkt des Packens."""
         assert packe(b"gleich") == packe(b"gleich")
+
+
+class TestEindeutigeZusatzdaten:
+    """Die Bestandteile der Zusatzdaten trennt ein Zeilenumbruch.
+
+    Enthielte einer von ihnen selbst einen, ergaeben zwei verschiedene
+    Tripel dieselben Zusatzdaten -- und die Bindung an den Pfad waere dort
+    aufgehoben. Heute kann das nicht vorkommen; erzwungen war es bisher
+    trotzdem nirgends.
+    """
+
+    def test_zeilenumbruch_im_pfad_wird_abgelehnt(self) -> None:
+        with pytest.raises(KryptoKonfigurationError, match="mehrdeutig"):
+            verschluesselung().verschluessele("data/a\nb.json", b"x")
+
+    def test_zeilenumbruch_in_der_baumkennung_wird_abgelehnt(self) -> None:
+        with pytest.raises(KryptoKonfigurationError, match="mehrdeutig"):
+            verschluesselung("baum\n1").verschluessele("data/a.json", b"x")
+

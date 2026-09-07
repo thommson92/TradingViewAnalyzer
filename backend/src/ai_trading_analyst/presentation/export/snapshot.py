@@ -38,6 +38,7 @@ from ai_trading_analyst.application.read_run_overview import ReadRunOverviewUseC
 from ai_trading_analyst.domain.analysis import (
     MarketDataProvider,
     MarketDataProviderError,
+    MarketDataUnavailableError,
     UnitOfWork,
 )
 from ai_trading_analyst.domain.backtesting import BacktestParameters
@@ -48,6 +49,7 @@ from ai_trading_analyst.presentation.api import views
 from ai_trading_analyst.presentation.api.schemas import (
     AnalysisRunDetailResponse,
     AnalysisRunResponse,
+    ReportSummaryResponse,
 )
 from ai_trading_analyst.presentation.validation_chart import build_chart_payload
 
@@ -91,9 +93,17 @@ class Exportquellen:
     """Woraus der Snapshot entsteht.
 
     Dieselben Bausteine, die auch die API im ``app.state`` haelt. Der
-    Marktdatenanbieter kommt als **Fabrik**, wie im Webdienst: Er haengt an
-    der Watchlist-Datei, und ein fehlendes Verzeichnis soll den Chart kosten
-    und nicht den ganzen Export.
+    Marktdatenanbieter kommt als **Fabrik**, weil er an der Watchlist-Datei
+    haengt und erst gebraucht wird, wenn die Charts an der Reihe sind -- also
+    nach allem, was ohne ihn entsteht.
+
+    **Ein fehlendes Watchlist-Verzeichnis bricht den Export ab**, und zwar
+    ganz: Die Fabrik wird ausserhalb jeder Fehlerbehandlung gerufen, und ihr
+    ``WatchlistError`` ist kein ``MarketDataProviderError``. Das ist richtig
+    so -- ohne Watchlist ist der Bestand nicht zu deuten --, aber es ist
+    etwas anderes als "kostet nur den Chart". Im Tageslauf faengt es die
+    Isolation des Exportschritts ab, in der Kommandozeile die Behandlung in
+    ``main``.
     """
 
     uow_factory: Callable[[], UnitOfWork]
@@ -177,6 +187,25 @@ def _alle_laeufe(uow: UnitOfWork) -> list[AnalysisRunResponse]:
         offset += _SEITE
 
 
+def _alle_berichte(uow: UnitOfWork, symbol: str) -> list[ReportSummaryResponse]:
+    """Die ganze Historie einer Aktie -- seitenweise geladen.
+
+    **Vollstaendig und nicht die erste Seite.** Draussen blaettert die
+    Oberflaeche selbst und rechnet die Gesamtzahl aus dem, was in der Datei
+    steht; eine gedeckelte Datei ergaebe dort eine falsche Gesamtzahl und eine
+    abgeschnittene Historie, ohne dass irgendwo stuende, dass gekuerzt wurde.
+    Genau das schliesst der Grundsatz "keine stille Auslassung" aus.
+    """
+    gesammelt: list[ReportSummaryResponse] = []
+    offset = 0
+    while True:
+        seite = views.reports_of_stock(uow, symbol, limit=_SEITE, offset=offset)
+        gesammelt.extend(seite.items)
+        if len(seite.items) < _SEITE or len(gesammelt) >= seite.total:
+            return gesammelt
+        offset += _SEITE
+
+
 def iter_snapshot(
     quellen: Exportquellen,
     *,
@@ -244,7 +273,8 @@ def iter_snapshot(
                     f"data/reports/{bericht.id}.json", _als_json(dict(bericht.document))
                 )
 
-        symbole = sorted(stock.symbol for stock in uow.stocks.list_all())
+        aktien = sorted(uow.stocks.list_all(), key=lambda stock: stock.symbol)
+        symbole = [stock.symbol for stock in aktien]
         namen = _symbolnamen(symbole)
 
         messungen = views.measurements(uow)
@@ -265,10 +295,11 @@ def iter_snapshot(
 
         for symbol in symbole:
             name = namen[symbol]
-            historie = views.reports_of_stock(uow, symbol, limit=_SEITE, offset=0)
             yield datei(
                 f"data/stocks/{name}/reports.json",
-                _als_json([eintrag.model_dump(mode="json") for eintrag in historie.items]),
+                _als_json(
+                    [eintrag.model_dump(mode="json") for eintrag in _alle_berichte(uow, symbol)]
+                ),
             )
             yield datei(
                 f"data/stocks/{name}/backtest.json",
@@ -284,20 +315,31 @@ def iter_snapshot(
 
     # Die Charts ausserhalb der Unit of Work: Der Anbieter liest den Bestand
     # selbst, und eine Transaktion ueber zweihundert Kursreihen offen zu
-    # halten waere eine lange Sperre ohne Gegenwert.
+    # halten waere eine lange Sperre ohne Gegenwert. Die Aktien selbst liegen
+    # schon vor -- es sind Domain-Objekte ohne Sitzungsbindung, und sie
+    # zweihundertmal erneut nachzuschlagen brauchte eine zweite Transaktion
+    # fuer nichts.
     marktdaten = quellen.chart_market_data()
-    with quellen.uow_factory() as uow:
-        for symbol in symbole:
-            aktie = uow.stocks.get_by_symbol(symbol)
-            if aktie is None:  # pragma: no cover -- gerade eben noch gelistet
-                continue
+    if True:
+        for aktie in aktien:
+            symbol = aktie.symbol
             try:
                 reihe = marktdaten.get_candle_series(aktie)
+            except MarketDataUnavailableError:
+                # **Zuerst der Ausfall, und die Reihenfolge ist der ganze
+                # Punkt:** ``MarketDataUnavailableError`` ist Unterklasse von
+                # ``MarketDataProviderError``. Stuende die breite Klausel
+                # zuerst, finge sie den Datenbankabriss mit -- und der Export
+                # schriebe ein vollstaendiges Manifest mit null Charts, worauf
+                # der Schreiber jede bisher exportierte Chartdatei als
+                # verwaist entfernte. Draussen stuende dann ein Stand, der wie
+                # ein regulaerer aussieht und keinen einzigen Chart hat.
+                # Dieselbe Reihenfolge wie im Endpunkt (``api/v1/stocks.py``).
+                raise
             except MarketDataProviderError as fehler:
-                # Eine Aktie ohne Kerzen im Bestand kostet ihren Chart, nicht
-                # den Export. Ein Datenbankabriss ist etwas anderes und faellt
-                # als MarketDataUnavailableError durch -- der Export bricht
-                # dann ab, statt einen Snapshot ohne Charts zu behaupten.
+                # Eine Aktie ohne Kerzen im Bestand kostet dagegen nur ihren
+                # Chart. Das ist eine Aussage ueber die Datenlage, kein
+                # Betriebsproblem, und sie steht im Manifest.
                 _logger.warning("Kein Chart fuer %s im Export: %s", symbol, fehler)
                 fehlende_charts.append(symbol)
                 continue

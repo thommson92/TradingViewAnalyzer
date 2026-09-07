@@ -113,11 +113,10 @@ def get_stock_chart(
     """
     gesucht = views.normalisiertes_symbol(symbol)
     with uow_factory() as uow:
-        aktie = uow.stocks.get_by_symbol(gesucht)
-    if aktie is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Aktie nicht gefunden."
-        )
+        try:
+            aktie = views.aktie(uow, gesucht)
+        except views.NotFoundError as fehler:
+            raise _als_404(fehler) from fehler
     try:
         series = market_data.get_candle_series(aktie)
     except MarketDataUnavailableError as fehler:

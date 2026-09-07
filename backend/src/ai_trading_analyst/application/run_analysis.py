@@ -456,12 +456,18 @@ class RunAnalysisUseCase:
         try:
             self._notifier.send(
                 "Dashboard nicht aktualisiert",
-                "Der Lauf ist abgeschlossen, der Snapshot fuer das externe "
-                "Dashboard nicht geschrieben. Es zeigt weiter den letzten "
-                "Stand; Einzelheiten stehen im Protokoll des Servers.",
+                "Der Lauf ist abgeschlossen, der Snapshot fuer das Dashboard "
+                "nicht geschrieben. Der bisherige Stand bleibt unveraendert; "
+                "Einzelheiten stehen im Protokoll des Servers.",
             )
         except NotifierError as error:
             _logger.error("Hinweis auf den Exportfehler ging nicht raus: %s", error)
+        except Exception:
+            # Auch alles, was der Kanal nicht zugesagt hat. Die Zusage lautet,
+            # dass keine der beiden Systemgrenzen den Lauf anhaelt -- sie darf
+            # nicht an der Disziplin eines Adapters haengen, der heute sauber
+            # einhuellt und morgen vielleicht nicht mehr.
+            _logger.exception("Hinweis auf den Exportfehler liess sich nicht senden")
 
     def _prepare_stock(self, stock: Stock) -> _PreparedItem:
         """Screening und Earnings-Filter fuer eine Aktie -- ohne Research

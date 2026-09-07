@@ -22,6 +22,8 @@ const ERWARTETES_FORMAT = 1;
 const ERWARTETE_KDF = 'PBKDF2-HMAC-SHA256';
 const ERWARTETER_CIPHER = 'AES-256-GCM';
 const NONCE_LAENGE = 12;
+// Nach oben offen waere die Rundenzahl ein Knopf zum Aufhaengen des Tabs.
+const HOECHST_ITERATIONEN = 10_000_000;
 
 const KOPF_PFAD = '/data/manifest.head.json';
 const MANIFEST_PFAD = 'data/manifest.json';
@@ -250,10 +252,18 @@ async function entpacke(gefuellt: Uint8Array): Promise<Uint8Array> {
   const kopf = new DataView(gefuellt.buffer, gefuellt.byteOffset, 4);
   const laenge = kopf.getUint32(0, false);
   const gepackt = gefuellt.subarray(4, 4 + laenge);
-  const strom = new Blob([alsPuffer(gepackt)])
-    .stream()
-    .pipeThrough(new DecompressionStream('gzip'));
-  return new Uint8Array(await new Response(strom).arrayBuffer());
+  try {
+    const strom = new Blob([alsPuffer(gepackt)])
+      .stream()
+      .pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(strom).arrayBuffer());
+  } catch {
+    // Nur nach bestandener Authentifizierung erreichbar -- also kein
+    // Angriff, sondern eine auf dem Server kaputt geschriebene Datei. Auch
+    // die soll als Meldung dieser Oberflaeche ankommen und nicht als
+    // Rohfehler der Laufzeitumgebung.
+    throw new DatenbaumFehler('Eine Datei des Stands ist beschaedigt.');
+  }
 }
 
 // --- Oeffnen ---------------------------------------------------------------
@@ -311,6 +321,22 @@ export function pruefeKopf(roh: unknown): Klartextkopf {
   // **geprueft und nicht befolgt**: Ein herabgesetzter Rundenwert oder ein
   // ausgetauschtes Verfahren gilt hier als Fehler, nicht als Einstellung
   // (ADR 0060, Punkt 6).
+  //
+  // Wogegen das wirkt, ist genau zu benennen -- sonst verdraengt eine zu
+  // gross erzaehlte Begruendung spaeter die echte. **Nicht** gegen einen
+  // Angreifer, der den Kopf umschreibt: Der Arbeitsfaktor des gespeicherten
+  // Chiffrats steht fest, sobald der Server verschluesselt hat; wer nur den
+  // Kopf aendert, erreicht eine falsche Ableitung und damit einen Ausfall,
+  // keinen Angriff auf die Passphrase. Wohl aber gegen einen **Server**, der
+  // zu schwach verschluesselt hat -- eine falsch gesetzte Konfiguration, eine
+  // aeltere Fassung des Exporters. Diese Pruefung ist die zweite Instanz
+  // hinter der des Servers, und sie steht auf der Seite, die der Server
+  // nicht kontrolliert.
+  if (typeof roh !== 'object' || roh === null) {
+    // Ohne diese Zeile wirft der naechste Feldzugriff einen TypeError der
+    // Laufzeitumgebung, und die Oberflaeche zeigte ihn im Wortlaut an.
+    throw new DatenbaumFehler('Der Kopf des Stands ist kein Objekt.');
+  }
   const kopf = roh as Partial<Klartextkopf>;
   if (kopf.format !== ERWARTETES_FORMAT) {
     throw new DatenbaumFehler(
@@ -337,14 +363,27 @@ export function pruefeKopf(roh: unknown): Klartextkopf {
         `Verlangt sind mindestens ${String(MINDEST_ITERATIONEN)}.`,
     );
   }
-  if (typeof kopf.salt !== 'string' || kopf.salt.length < 32) {
-    throw new DatenbaumFehler('Das Salt des Stands ist zu kurz oder fehlt.');
+  if (kopf.iterations > HOECHST_ITERATIONEN) {
+    // Nach oben offen waere der Kopf ein Knopf, mit dem sich der Tab
+    // aufhaengen laesst: PBKDF2 laeuft im Vordergrund, und 10^12 Runden
+    // kehren nie zurueck.
+    throw new DatenbaumFehler(
+      `Unglaubwuerdig viele Ableitungsrunden: ${String(kopf.iterations)}.`,
+    );
   }
-  if (typeof kopf.tree_id !== 'string' || kopf.tree_id === '') {
-    throw new DatenbaumFehler('Dem Stand fehlt die Kennung des Datenbaums.');
+  if (typeof kopf.salt !== 'string' || kopf.salt.length < 32 || !istHex(kopf.salt)) {
+    // Der Hex-Test ist keine Formsache: `ausHex` machte aus 64 unzulaessigen
+    // Zeichen stillschweigend 32 Nullbytes, und die Oberflaeche meldete
+    // danach "Passphrase falsch" -- fuer einen Fehler, der ganz woanders lag.
+    throw new DatenbaumFehler('Das Salt des Stands ist zu kurz, fehlt oder ist kein Hex.');
   }
-  if (typeof kopf.manifest !== 'string' || kopf.manifest === '') {
-    throw new DatenbaumFehler('Der Stand nennt kein Manifest.');
+  if (typeof kopf.tree_id !== 'string' || kopf.tree_id === '' || kopf.tree_id.includes('\n')) {
+    // Der Zeilenumbruch trennt die Bestandteile der Zusatzdaten. Eine
+    // Kennung, die selbst einen enthaelt, machte die Kodierung mehrdeutig.
+    throw new DatenbaumFehler('Die Kennung des Datenbaums fehlt oder ist unzulaessig.');
+  }
+  if (typeof kopf.manifest !== 'string' || !istHex(kopf.manifest) || kopf.manifest.length !== 32) {
+    throw new DatenbaumFehler('Der Stand nennt kein gueltiges Manifest.');
   }
   return kopf as Klartextkopf;
 }
@@ -363,7 +402,17 @@ export function alsHex(puffer: ArrayBuffer): string {
     .join('');
 }
 
+export function istHex(text: string): boolean {
+  return text.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(text);
+}
+
 export function ausHex(hex: string): Uint8Array {
+  // Streng: `Number.parseInt('zz', 16)` ergibt `NaN`, und `NaN` in ein
+  // `Uint8Array` geschrieben wird zu 0. Ohne diese Pruefung waeren 64
+  // unzulaessige Zeichen ein gueltig aussehendes Salt aus Nullbytes.
+  if (!istHex(hex)) {
+    throw new DatenbaumFehler('Kein gueltiger Hex-Wert.');
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i += 1) {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);

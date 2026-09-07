@@ -57,9 +57,15 @@ class Exportzustand:
     ``baum_id`` und ``salt`` sind bewusst **stabil** ueber viele Exporte
     hinweg: Aus ihnen leiten sich Schluessel und damit die opaken Dateinamen
     ab. Ein neues Salt je Lauf ergaebe bei jedem Lauf einen vollstaendig
-    neuen Baum -- jede Datei neu, jede Datei hochzuladen. Gewechselt werden
-    beide, wenn die Passphrase wechselt; dann ist der ganze Baum neu, und das
-    ist gewollt.
+    neuen Baum -- jede Datei neu, jede Datei hochzuladen.
+
+    **Auch ein Wechsel der Passphrase aendert beide nicht.** Er aendert den
+    abgeleiteten Schluessel, und damit aendern sich alle Dateinamen und alle
+    Inhalte; die alten Dateien gelten danach als verwaist und verschwinden.
+    Salt und Baumkennung bleiben aber dieselben, und die Zusatzdaten
+    unterscheiden alt und neu deshalb nicht -- das leistet der Schluessel.
+    Ein Salt, das ueber zwei Passphrasen desselben Nutzers steht, ist
+    unbedenklich; was es nicht ist, ist ein Ersatz fuer den Schluesselwechsel.
 
     Kein Geheimnis in dieser Datei: Salt und Baumkennung sind oeffentliche
     Parameter, sie stehen ohnehin im Klartextkopf. Die Zuordnung Pfad ->

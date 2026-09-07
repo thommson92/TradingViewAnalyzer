@@ -3681,6 +3681,16 @@ def command_publish(args: argparse.Namespace) -> int:
             }
         )
 
+    # Vor der Datenbank: Ein abgeschalteter Export braucht keine Verbindung,
+    # und die Meldung dazu soll nicht hinter einem Verbindungsfehler stehen.
+    if config.dashboard_export.target == "none":
+        print(
+            "Der Dashboard-Export ist abgeschaltet (dashboard_export.target = 'none'). "
+            "Entweder '--directory <pfad>' mitgeben oder die Konfiguration setzen.",
+            file=sys.stderr,
+        )
+        return 2
+
     engine = _open_database()
     if engine is None:
         return 2
@@ -3697,12 +3707,7 @@ def command_publish(args: argparse.Namespace) -> int:
         print(f"Konfiguration: {error}", file=sys.stderr)
         return 2
 
-    if publisher is None:
-        print(
-            "Der Dashboard-Export ist abgeschaltet (dashboard_export.target = 'none'). "
-            "Entweder '--directory <pfad>' mitgeben oder die Konfiguration setzen.",
-            file=sys.stderr,
-        )
+    if publisher is None:  # pragma: no cover -- oben bereits abgefangen
         return 2
 
     try:
@@ -3785,6 +3790,19 @@ def command_dispatch(args: argparse.Namespace) -> int:
             )
         notifications = config.notifications.model_copy(update=aenderung)
         config = config.model_copy(update={"notifications": notifications})
+    if args.dashboard_export is not None:
+        # Wie die Anbieter: geschaltet wird ueber ein Argument der
+        # Aufgabenplanung, nicht ueber eine Datei, die im oeffentlichen
+        # Repository versioniert ist (ADR 0060, Punkt 2). Und es ist der
+        # Notausschalter K3 des Spike-Berichts -- "none" mitgeben, Aufgabe
+        # speichern, fertig.
+        config = config.model_copy(
+            update={
+                "dashboard_export": config.dashboard_export.model_copy(
+                    update={"target": args.dashboard_export}
+                )
+            }
+        )
 
     # Vor dem Lauf, nicht in der Analyse: Ein fehlendes Geheimnis ist ein
     # Konfigurationsfehler und kein voruebergehender Ausfall. Erst hinter dem
@@ -4355,6 +4373,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Uebersteuert notifications.telegram.chat_id nur fuer diesen Lauf. Kein "
             "Geheimnis, gehoert aber wie die Anbieter-Schalter in die Argumente der "
             "Aufgabenplanung statt in config/default.yaml."
+        ),
+    )
+    dispatch.add_argument(
+        "--dashboard-export",
+        choices=("none", "directory"),
+        default=None,
+        help=(
+            "Uebersteuert dashboard_export.target nur fuer diesen Lauf (ADR 0060). "
+            "'none' ist zugleich der Notausschalter: Er haelt den Tageslauf nicht an, "
+            "sondern laesst nur den Snapshot aus."
         ),
     )
     dispatch.set_defaults(handler=command_dispatch)

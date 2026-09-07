@@ -101,7 +101,7 @@ describe('Der Klartextkopf wird geprueft, nicht befolgt', () => {
     salt: 'a'.repeat(64),
     cipher: 'AES-256-GCM',
     tree_id: 'baum-1',
-    manifest: 'abc',
+    manifest: 'b'.repeat(32),
   };
 
   it('nimmt einen gueltigen Kopf an', () => {
@@ -128,6 +128,44 @@ describe('Der Klartextkopf wird geprueft, nicht befolgt', () => {
 
   it('lehnt einen Kopf ohne Manifest ab', () => {
     expect(() => pruefeKopf({ ...gueltig, manifest: '' })).toThrow(/Manifest/);
+  });
+
+  it('lehnt einen Kopf ab, der gar kein Objekt ist', () => {
+    // Ohne diese Pruefung wirft der naechste Feldzugriff einen TypeError der
+    // Laufzeitumgebung, und die Oberflaeche zeigte ihn im Wortlaut.
+    expect(() => pruefeKopf(null)).toThrow(DatenbaumFehler);
+    expect(() => pruefeKopf('kein Objekt')).toThrow(DatenbaumFehler);
+  });
+
+  it('lehnt ein Salt ab, das kein Hex ist', () => {
+    // `ausHex` machte aus 64 unzulaessigen Zeichen stillschweigend 32
+    // Nullbytes -- und die Oberflaeche meldete danach "Passphrase falsch"
+    // fuer einen Fehler, der ganz woanders lag.
+    expect(() => pruefeKopf({ ...gueltig, salt: 'z'.repeat(64) })).toThrow(/Salt/);
+    expect(() => pruefeKopf({ ...gueltig, salt: 'a'.repeat(65) })).toThrow(/Salt/);
+  });
+
+  it('lehnt unglaubwuerdig viele Runden ab', () => {
+    // Nach oben offen waere die Rundenzahl ein Knopf zum Aufhaengen des Tabs.
+    expect(() => pruefeKopf({ ...gueltig, iterations: 1_000_000_000_000 })).toThrow(
+      /Unglaubwuerdig/,
+    );
+  });
+
+  it('lehnt eine Baumkennung mit Zeilenumbruch ab', () => {
+    // Der Umbruch trennt die Bestandteile der Zusatzdaten; eine Kennung, die
+    // selbst einen enthaelt, machte die Kodierung mehrdeutig.
+    expect(() => pruefeKopf({ ...gueltig, tree_id: 'a\nb' })).toThrow(/Kennung/);
+  });
+});
+
+describe('Hex-Werte werden streng gelesen', () => {
+  it('weist unzulaessige Zeichen zurueck, statt Nullbytes zu liefern', () => {
+    expect(() => ausHex('z'.repeat(64))).toThrow(DatenbaumFehler);
+  });
+
+  it('weist eine ungerade Laenge zurueck', () => {
+    expect(() => ausHex('abc')).toThrow(DatenbaumFehler);
   });
 });
 
