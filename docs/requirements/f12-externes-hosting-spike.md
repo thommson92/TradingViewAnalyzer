@@ -1,10 +1,11 @@
 # F12 — Dashboard außerhalb des Servers: Spike-Bericht
 
-- Status: **Spike abgeschlossen, Entscheidung offen.** Der daraus
-  abgeleitete Vorschlag steht in
-  [ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md) mit Status
-  „Vorgeschlagen". Dieses Dokument ist die Grundlage dafür und bleibt als
-  Beleg erhalten, wie
+- Status: **Spike abgeschlossen.** Der daraus abgeleitete Vorschlag steht
+  in [ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md) mit Status
+  „Vorgeschlagen"; die sieben Entscheidungspunkte hat der Inhaber am
+  2026-09-07 beschieden — **Abschnitt 10.3**. Die Annahme des ADR hängt
+  weiter am Proof of Concept beim Anbieter. Dieses Dokument ist die
+  Grundlage dafür und bleibt als Beleg erhalten, wie
   [earnings-anbieter-evaluation.md](earnings-anbieter-evaluation.md) und
   [g3-entscheidungsvorlage.md](g3-entscheidungsvorlage.md).
 - Datum: 2026-09-06
@@ -832,6 +833,33 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 | E5 | Link zum Dashboard in der Telegram-Meldung, sobald es außerhalb steht? | Eigene Abwägung gegen ADR 0040; **erst nach Stufe 2**, dann ja — der Link führt zu Chiffrat hinter Anmeldung |
 | E6 | Eigener Domainname oder Subdomain des Anbieters? | **Subdomain des Anbieters** mit nichtssagendem Namen — ein eigener Name steht in öffentlichen Verzeichnissen |
 | E7 | ADR 0059 (Overlay) endgültig verwerfen oder für die Fernwartung des Servers offenhalten? | **Offenhalten** für O12; für das Dashboard verwerfen |
+
+### 10.3 Stand der Entscheidungen am 2026-09-07
+
+Der Inhaber hat alle sieben Entscheidungspunkte beschieden, jeweils der
+Empfehlung folgend: **E1** Stufe 2 unmittelbar, **E2** Identitätsanbieter,
+**E3** Bauweise B1, **E4** Datenweg nach Befund des PoC, **E5** Link erst
+nach Stufe 2, **E6** Subdomain des Anbieters, **E7** ADR 0059 für die
+Fernwartung offen. Der Wortlaut steht im Nachtrag zu
+[ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md).
+
+Zwei offene Fragen sind damit beantwortet:
+
+- **O4** — Auf dem Server ist Node vorhanden. DW2 ist gangbar; DW1 bleibt
+  vorzuziehen, wo der Anbieter eine tragfähige HTTP-Schnittstelle bietet.
+- **O8** — Ein Passwortmanager liegt auf allen Geräten. Die Passphrase für
+  Stufe 2 wird lang und zufällig erzeugt.
+
+**O1** (Lizenzlesart), **O2** (Nutzungsbedingungen des Anbieters), **O3**
+(Konto beim Identitätsanbieter), **O5**, **O6**, **O9**, **O10**, **O11**
+und **O12** bleiben offen; **O7** ist mit Entscheidung Punkt 4 des ADR
+beantwortet — das LAN-Dashboard bleibt.
+
+Ebenfalls am 2026-09-07 entschieden, abweichend von Abschnitt 11: Der
+Exportschritt entsteht **als Produktivcode** statt als Wegwerf-Skript, und
+die Abnahmekriterien AK1–AK18 und Negativtests N1–N19 laufen gegen diesen
+Code. Was einen Anbieter braucht — Phase 2 und die Nachweise AK1–AK9 zur
+Kante —, bleibt unverändert Voraussetzung für die Annahme von ADR 0060.
 
 ---
 

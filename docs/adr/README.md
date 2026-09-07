@@ -94,7 +94,7 @@ entsteht ein neues ADR, das das alte ausdruecklich abloest.
 | [0057](0057-torbedingungen-und-episoden.md) | Torbedingungen an der Entscheidungskerze, Episoden statt Cooldown | Angenommen (Frische und Schlusskurs über EMA 20 als Filter ohne neue Signaltypen; Ereignis-Verkettung ersetzt den Cooldown; ATR-Stärkefilter geprüft und verworfen) |
 | [0058](0058-optionsvorschlaege-im-rueckblick.md) | Optionsvorschläge im Rückblick — modelliert, gekennzeichnet, gemessen | Angenommen (elf Festlegungen; Rohnotierungen ab sofort speichern; Skew erst messen, Strukturvergleich zunächst nur live; keine Zinsannahme; eigene Tabelle und Version) |
 | [0059](0059-fernzugang-dashboard-overlay-netz.md) | Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit | Vorgeschlagen, am 2026-09-07 **zurückgestellt** (Neubewertung von ADR 0049; Grundlage: [Spike-Bericht F12](../requirements/f12-externer-zugriff-spike.md), dort Abschnitt 15 zum Stand. Für das Dashboard nicht weiterverfolgt — der Weg verlangt Client-Software je Gerät —, für die Fernwartung des Servers offen. Weder angenommen noch abgelehnt; angenommen löste er die Expositionsaussage aus 0049 ab und ersetzte Punkt 3 aus 0052) |
-| [0060](0060-dashboard-ausserhalb-des-servers.md) | Das Dashboard läuft außerhalb des Servers — Snapshot je Lauf, ausgehend hochgeladen, Anmeldung an der Kante, Zero-Knowledge als Zielstufe | Vorgeschlagen (zweiter Ansatz zu F12; Grundlage: [Spike-Bericht](../requirements/f12-externes-hosting-spike.md); Annahme erst nach bestandenem PoC; die Nummer 0059 ist durch den zurückgestellten ersten Ansatz auf dem Branch `feature/spike-dashboard-externer-zugriff` belegt — vor dem Merge von 0060 gehört 0059 als „Vorgeschlagen, zurückgestellt" nach `dev`, damit die Nummerierung lückenlos bleibt) |
+| [0060](0060-dashboard-ausserhalb-des-servers.md) | Das Dashboard läuft außerhalb des Servers — Snapshot je Lauf, ausgehend hochgeladen, Anmeldung an der Kante, Zero-Knowledge als Zielstufe | Vorgeschlagen (zweiter Ansatz zu F12; Grundlage: [Spike-Bericht](../requirements/f12-externes-hosting-spike.md); die sieben Entscheidungspunkte sind am 2026-09-07 beschieden — siehe den Nachtrag —, die Annahme hängt weiter am Proof of Concept beim Anbieter) |
 
 ## Offene Entscheidungen
 
@@ -224,5 +224,7 @@ ADR, sobald die nötigen Informationen vorliegen:
   offen. Der zweite — das Dashboard läuft außerhalb des Servers, der Server
   lädt nach jedem Lauf nur ausgehend einen Snapshot hoch — steht als
   [ADR 0060](0060-dashboard-ausserhalb-des-servers.md) mit
-  [Spike-Bericht](../requirements/f12-externes-hosting-spike.md). **Bis eine
+  [Spike-Bericht](../requirements/f12-externes-hosting-spike.md); seine
+  sieben Entscheidungspunkte hat der Inhaber am 2026-09-07 beschieden, die
+  Annahme hängt am Proof of Concept beim Anbieter. **Bis eine
   der beiden Entscheidungen angenommen ist, gilt ADR 0049 unverändert.**

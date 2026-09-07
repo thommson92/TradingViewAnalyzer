@@ -268,3 +268,59 @@ zweite Auslieferung; ADR 0053 bleibt unverändert — außerhalb gibt es
 keine API. ADR 0059 wird für das Dashboard nicht weiterverfolgt; ob es für
 die Fernwartung des Servers wieder aufgenommen wird, ist eine eigene
 Frage. ADR 0049 wird nicht rückwirkend geändert.
+
+---
+
+## Nachtrag vom 2026-09-07 — die Entscheidungen des Inhabers liegen vor
+
+Der Inhaber hat am 2026-09-07 alle sieben Entscheidungspunkte des
+Spike-Berichts (Abschnitt 10.2) beschieden, jeweils der Empfehlung
+folgend, und zwei offene Fragen beantwortet. Der Status dieses ADR bleibt
+**Vorgeschlagen**: Entscheidung Punkt 10 bindet die Annahme an einen
+bestandenen Proof of Concept, und dessen Teil beim Anbieter steht noch aus.
+
+| # | Entschieden |
+|---|---|
+| E1 | Zero-Knowledge (Stufe 2) wird **unmittelbar** nach Stufe 1 gebaut, nicht offengelassen |
+| E2 | Anmeldung an der Kante über einen **Identitätsanbieter** mit Authenticator-App oder Passkey; E-Mail-Einmalcode nur Rückfall |
+| E3 | Bauweise **B1** — der Server baut die Oberfläche und lädt beides hoch |
+| E4 | Datenweg nach Befund des PoC; mit der Antwort auf O4 ist **DW2** wahrscheinlich |
+| E5 | Ein Link in der Telegram-Meldung **erst nach Stufe 2**, dann ja |
+| E6 | **Subdomain des Anbieters** mit nichtssagendem Namen, kein eigener Domainname |
+| E7 | ADR 0059 bleibt für die **Fernwartung des Servers offen**; für das Dashboard wird er nicht weiterverfolgt |
+
+Beantwortete offene Fragen:
+
+- **O4:** Auf dem Server ist **Node vorhanden**. Damit ist der Datenweg DW2
+  — das Werkzeug des Anbieters als Unterprozess — gangbar, ohne dass ein
+  neues Laufzeitsystem auf den Handelsrechner käme. Der Nachtrag zu
+  [ADR 0052](0052-dashboard-als-statischer-export.md) Punkt 2 wird damit
+  wahrscheinlich und ist mit der Anbieterwahl fällig. DW1 (`httpx`) bleibt
+  der schmalere Weg und wird bevorzugt, wo der Anbieter eine tragfähige
+  HTTP-Schnittstelle bietet.
+- **O8:** Der Inhaber hat einen **Passwortmanager auf allen Geräten**, mit
+  denen er zugreifen will. Die Passphrase für Stufe 2 wird deshalb **lang
+  und zufällig erzeugt** und nirgends getippt oder auswendig gelernt. Das
+  ist die stärkere von beiden Varianten; die Ableitungsparameter bleiben
+  davon unberührt, weil sie den Fall eines gestohlenen Chiffrats abdecken
+  müssen und nicht den einer schwachen Passphrase.
+
+**Eine bewusste Abweichung von Entscheidung Punkt 10.** Dort steht, der PoC
+laufe „mit einem Wegwerf-Skript statt Produktcode". Der Inhaber hat sich
+am 2026-09-07 dagegen entschieden: Der Exportschritt entsteht **unmittelbar
+als Produktivcode** auf einem Feature-Branch, und die Abnahmekriterien
+AK1–AK18 sowie die Negativtests N1–N19 des PoC-Plans laufen gegen diesen
+Code statt gegen Wegwerfcode. Der Grund ist, dass Datenbaum,
+Verschlüsselung und statischer Datenmodus in beiden Fassungen dieselben
+wären und zweimal entstünden.
+
+Was diese Abweichung **nicht** ändert: Der PoC-Teil, der einen Anbieter
+braucht — Phase 2 des Plans, die Nachweise zur Reichweite des Tokens, zur
+Zugriffsregel über den ganzen Hostnamen und zu den älteren
+Deployment-Adressen —, bleibt unverändert Voraussetzung für die Annahme
+dieses ADR. Er läuft mit synthetischen Daten, einem schreibbeschränkten
+Token und vollständigem Rückbau. Bis dahin gibt es kein Anbieterkonto,
+kein Token und keinen Upload; der Exporter schreibt in ein Verzeichnis.
+
+Der Satz „und ein Prototyp im PoC, der nicht gemergt wird" unter
+„Negativ und offen" ist damit gegenstandslos.
