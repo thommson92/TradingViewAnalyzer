@@ -135,6 +135,7 @@ Noch offen:
 | Fundamental Agent, KI-Hälfte | Sprint 4 — die deterministischen Kennzahlen stehen ([ADR 0032](docs/adr/0032-fundamentalanalyse-deterministisch.md), [ADR 0033](docs/adr/0033-zwoelfmonatswerte-statt-jahresabschluss.md)), die Einordnung folgt |
 | Report Generator, KI-Hälfte | Sprint 4 — der deterministische Bericht steht ([ADR 0039](docs/adr/0039-report-generator.md)), die Formulierung folgt |
 | Dashboard am Server einrichten | Sprint 6 — Lese-API und drei Ansichten (Tagesübersicht, Berichtsdetail, Historie je Aktie) sind gebaut; die Auslieferung auf dem Windows-Server steht aus ([Doc 14, Stufe J](docs/14%20-%20Inbetriebnahme%20und%20Betrieb.md)) |
+| Dashboard außerhalb des Servers | Exportschritt, Verschlüsselung und statischer Datenmodus sind gebaut und getestet; offen sind Anbieterwahl, Proof of Concept und damit die Annahme von [ADR 0060](docs/adr/0060-dashboard-ausserhalb-des-servers.md) |
 
 Der Erledigungsstand der Befunde aus dem
 [Repository-Audit 2](docs/audits/2026-08-31-repository-audit-2.md) wird in
@@ -459,6 +460,40 @@ auf 8000). Damit das Frontend die API findet, braucht es dann
 im gebauten Stand bleibt die Variable leer, weil beides von derselben
 Herkunft kommt.
 
+### Dashboard außerhalb des Servers
+
+Vorbereitet, aber **noch nicht in Betrieb**:
+[ADR 0060](docs/adr/0060-dashboard-ausserhalb-des-servers.md) ist
+vorgeschlagen, nicht angenommen — die Annahme hängt an einem Proof of
+Concept beim Anbieter. Der Gedanke kehrt die Frage um: Nicht der Nutzer
+kommt zum Server, sondern die Ergebnisse gehen zum Nutzer. Der Server —
+zugleich der Rechner mit der TWS — bekommt dadurch keinen eingehenden Port.
+
+Nach jedem Lauf schreibt der Exportschritt einen Datenbaum aus den
+Antworten derselben lesenden Endpunkte, die auch das LAN-Dashboard nutzt.
+Dieselbe Oberfläche liest ihn, gebaut mit einer anderen Bauvariablen:
+
+```bash
+# Stufe 2: die Oberfläche nimmt ausschließlich Chiffrat an
+cd frontend && NEXT_PUBLIC_DATENMODUS=verschluesselt npm run build
+
+# Den Datenbaum von Hand schreiben (der Tageslauf tut es am Ende jedes Laufs)
+cd backend
+ATA_DASHBOARD_EXPORT_PASSPHRASE=… .venv/bin/python -m ai_trading_analyst.cli \
+    publish --directory var/dashboard
+```
+
+Eingeschaltet wird der Schritt über `dashboard_export` in
+`config/default.yaml`; ausgeliefert steht er auf `none`. Steht `encrypt` auf
+`true` — die Voreinstellung —, verlangt der Export die Passphrase aus
+`ATA_DASHBOARD_EXPORT_PASSPHRASE` und bricht ohne sie ab: Es gibt bewusst
+keinen stillen Rückfall auf Klartext. `--full` verwirft den bekannten Stand
+und schreibt jede Datei neu; ohne den Schalter entsteht nur, was sich
+geändert hat.
+
+Was **nicht** dazugehört, solange der PoC aussteht: kein Anbieterkonto, kein
+Token, kein Upload. Der Weg endet im Verzeichnis.
+
 ### Tests mit echtem PostgreSQL
 
 `backend/tests/integration/` prüft Persistenz, Migrationen und die REST-API
@@ -510,6 +545,11 @@ Ein abweichender Pfad lässt sich über `ATA_CONFIG_FILE` setzen.
 
 Der Abschnitt `indicators` enthält die für Gate G1 fachlich freigegebenen
 Parameter — siehe [ADR 0010](docs/adr/0010-gate-g1-freigegeben.md).
+
+Der Abschnitt `dashboard_export` steuert den Snapshot für das Dashboard
+außerhalb des Servers und steht ausgeliefert auf `none`
+([ADR 0060](docs/adr/0060-dashboard-ausserhalb-des-servers.md), noch nicht
+angenommen).
 
 ## Mitwirken
 
