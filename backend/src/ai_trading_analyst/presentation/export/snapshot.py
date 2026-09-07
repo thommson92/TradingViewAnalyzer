@@ -22,6 +22,7 @@ Upload nicht erkennen, was unveraendert blieb.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -198,10 +199,23 @@ def iter_snapshot(
     berichte_gesamt = 0
     charts_gesamt = 0
     fehlende_charts: list[str] = []
+    hashes: dict[str, str] = {}
+
+    def datei(pfad: str, inhalt: bytes) -> Exportdatei:
+        """Merkt sich den Hash und liefert die Datei.
+
+        Die Hashes stehen danach im Manifest, und der Browser prueft sie nach
+        dem Entschluesseln. Das ist der Schutz gegen eine untergeschobene
+        aeltere Fassung einer einzelnen Datei: Sie entschluesselt sich
+        einwandfrei -- sie gehoert ja zu diesem Baum -- und faellt erst am
+        Hash auf.
+        """
+        hashes[pfad] = hashlib.sha256(inhalt).hexdigest()
+        return Exportdatei(pfad, inhalt)
 
     with quellen.uow_factory() as uow:
         laeufe = _alle_laeufe(uow)
-        yield Exportdatei(
+        yield datei(
             "data/analysis-runs.json",
             _als_json([lauf.model_dump(mode="json") for lauf in laeufe]),
         )
@@ -211,12 +225,12 @@ def iter_snapshot(
             lauf_id = lauf.id
             detail = uebersicht.execute(lauf_id)
             if detail is not None:
-                yield Exportdatei(
+                yield datei(
                     f"data/analysis-runs/{lauf_id}.json",
                     _modell(AnalysisRunDetailResponse.from_overview(detail)),
                 )
             kurzliste = views.reports_of_run(uow, lauf_id)
-            yield Exportdatei(
+            yield datei(
                 f"data/analysis-runs/{lauf_id}/reports.json",
                 _als_json([eintrag.model_dump(mode="json") for eintrag in kurzliste]),
             )
@@ -226,7 +240,7 @@ def iter_snapshot(
                     continue
                 berichte_gesamt += 1
                 # Das gespeicherte Dokument, unveraendert (ADR 0039).
-                yield Exportdatei(
+                yield datei(
                     f"data/reports/{bericht.id}.json", _als_json(dict(bericht.document))
                 )
 
@@ -234,13 +248,13 @@ def iter_snapshot(
         namen = _symbolnamen(symbole)
 
         messungen = views.measurements(uow)
-        yield Exportdatei(
+        yield datei(
             "data/options-backtests.json",
             _als_json([messung.model_dump(mode="json") for messung in messungen]),
         )
         for messung in messungen:
             messung_id = messung.measurement_id
-            yield Exportdatei(
+            yield datei(
                 f"data/options-backtests/{messung_id}.json",
                 _modell(
                     views.measurement_detail(
@@ -252,11 +266,11 @@ def iter_snapshot(
         for symbol in symbole:
             name = namen[symbol]
             historie = views.reports_of_stock(uow, symbol, limit=_SEITE, offset=0)
-            yield Exportdatei(
+            yield datei(
                 f"data/stocks/{name}/reports.json",
                 _als_json([eintrag.model_dump(mode="json") for eintrag in historie.items]),
             )
-            yield Exportdatei(
+            yield datei(
                 f"data/stocks/{name}/backtest.json",
                 _modell(
                     views.stock_backtest(
@@ -288,7 +302,7 @@ def iter_snapshot(
                 fehlende_charts.append(symbol)
                 continue
             charts_gesamt += 1
-            yield Exportdatei(
+            yield datei(
                 f"data/stocks/{namen[symbol]}/chart.json",
                 _als_json(
                     build_chart_payload(symbol, reihe, quellen.candidate_rule_parameters)
@@ -307,6 +321,7 @@ def iter_snapshot(
                 messungen=len(messungen),
                 charts=charts_gesamt,
                 fehlende_charts=fehlende_charts,
+                hashes=hashes,
             )
         ),
     )
@@ -322,6 +337,7 @@ def _manifest(
     messungen: int,
     charts: int,
     fehlende_charts: Sequence[str],
+    hashes: Mapping[str, str],
 ) -> dict[str, Any]:
     """Was die Oberflaeche ueber diesen Stand wissen muss.
 
@@ -359,4 +375,11 @@ def _manifest(
             "measurements": messungen,
         },
         "stocks_without_chart": list(fehlende_charts),
+        # SHA-256 des Klartexts je Pfad. Der Browser prueft sie nach dem
+        # Entschluesseln; das faengt die untergeschobene aeltere Fassung einer
+        # einzelnen Datei, die sich einwandfrei entschluesselt, weil sie zu
+        # diesem Baum gehoert. Was damit **nicht** zu fangen ist: das
+        # Zurueckspielen des ganzen Standes samt Manifest -- dagegen hilft nur,
+        # dass die Oberflaeche den Stand anzeigt.
+        "files": dict(sorted(hashes.items())),
     }

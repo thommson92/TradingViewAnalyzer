@@ -9,6 +9,7 @@ nicht zu haben.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -279,3 +280,28 @@ class TestSchichtgrenze:
         nicht gibt -- und ein Dashboard, das gar nicht erst anfaengt."""
         assert MANIFEST_PFAD == MANIFEST_PFAD_INFRA
         assert SNAPSHOT_FORMAT == FORMAT_VERSION
+
+
+class TestDateihashes:
+    def test_das_manifest_nennt_je_pfad_den_hash_des_klartexts(self) -> None:
+        """Der Schutz gegen eine untergeschobene aeltere Fassung.
+
+        Sie entschluesselt sich einwandfrei -- sie gehoert ja zu diesem Baum
+        -- und faellt erst am Hash auf.
+        """
+        quellen, _ = quellen_mit(laeufe=(lauf(),))
+        dateien = baum(quellen)
+        manifest = json.loads(dateien[MANIFEST_PFAD].decode("utf-8"))
+        hashes = manifest["files"]
+
+        # Jede Datei ausser dem Manifest selbst steht drin.
+        assert set(hashes) == set(dateien) - {MANIFEST_PFAD}
+        for pfad, erwartet in hashes.items():
+            assert hashlib.sha256(dateien[pfad]).hexdigest() == erwartet
+
+    def test_das_manifest_hasht_sich_nicht_selbst(self) -> None:
+        """Es kann seinen eigenen Hash nicht enthalten -- und braucht ihn
+        nicht: Wer es faelscht, faelscht die Verschluesselung mit."""
+        quellen, _ = quellen_mit()
+        manifest = json.loads(baum(quellen)[MANIFEST_PFAD].decode("utf-8"))
+        assert MANIFEST_PFAD not in manifest["files"]
