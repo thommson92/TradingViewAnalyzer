@@ -83,7 +83,7 @@ entsteht ein neues ADR, das das alte ausdruecklich abloest.
 | [0046](0046-empfehlungsstufe-aus-beiden-scores.md) | Empfehlungsstufe aus beiden Scores | Angenommen (füllt Berichtspunkt 16 und die News-Komponente; erledigt den offenen Befund aus ADR 0045) |
 | [0047](0047-scores-in-der-ergebnismeldung.md) | Scores in der Ergebnismeldung | Angenommen (lockert ADR 0040 in einem Punkt; entscheidet Finnhub L8; Zeilenformat und Kürzungstabelle durch [0055](0055-put-vorschlag-und-signalzahl-in-der-ergebnismeldung.md) abgelöst) |
 | [0048](0048-optionsanalyse-im-tageslauf.md) | Cash Secured Puts aus der IBKR-Optionskette | Angenommen (füllt Berichtspunkt 13 und die sechste Score-Komponente; führt die dritte gerichtete Kopplung ein) |
-| [0049](0049-dashboard-mvp-nur-lan.md) | Dashboard-MVP nur im eigenen Netz — keine Exposition, keine eigene Auth | Angenommen (entscheidet F12/E8, entsperrt Sprint 6; Exposition und Auth werden nach stabilem Betrieb neu bewertet) |
+| [0049](0049-dashboard-mvp-nur-lan.md) | Dashboard-MVP nur im eigenen Netz — keine Exposition, keine eigene Auth | Angenommen (entscheidet F12/E8, entsperrt Sprint 6; Exposition und Auth werden nach stabilem Betrieb neu bewertet — Neubewertung vorgeschlagen in [0059](0059-fernzugang-dashboard-overlay-netz.md)) |
 | [0050](0050-us-007-chartmuster-gestrichen.md) | Das US-007-Kriterium „relevante Chartmuster" ist gestrichen | Angenommen (entscheidet E13 des Audits vom 2026-08-23 — Streichung mit Vermerk statt stiller Löschung) |
 | [0051](0051-research-im-dauerbetrieb-abgeschaltet.md) | Research Agent im Dauerbetrieb abgeschaltet — Provider-Wert `none` | Angenommen (Kostenentscheidung; löst nichts an ADR 0021/0023 ab — die Einzelprobe bleibt der Weg) |
 | [0052](0052-dashboard-als-statischer-export.md) | Dashboard als statischer Export, ausgeliefert von der API | Angenommen (beantwortet die von ADR 0036 an den Dashboard-Sprint vertagte Container-Frage: weiterhin kein Container, kein Reverse Proxy) |
@@ -93,6 +93,7 @@ entsteht ein neues ADR, das das alte ausdruecklich abloest.
 | [0056](0056-kaufsignale-und-zusatzkriterien.md) | Fünf Kriterien, drei müssen erfüllt sein — Signal B ohne Gap-up-Klausel | Angenommen (ersetzt die 2-aus-3-Regel und die Signal-B-Formel aus ADR 0010 sowie die Signal-Teilwerte aus ADR 0045; Cooldown-Aussage durch [0057](0057-torbedingungen-und-episoden.md) abgelöst) |
 | [0057](0057-torbedingungen-und-episoden.md) | Torbedingungen an der Entscheidungskerze, Episoden statt Cooldown | Angenommen (Frische und Schlusskurs über EMA 20 als Filter ohne neue Signaltypen; Ereignis-Verkettung ersetzt den Cooldown; ATR-Stärkefilter geprüft und verworfen) |
 | [0058](0058-optionsvorschlaege-im-rueckblick.md) | Optionsvorschläge im Rückblick — modelliert, gekennzeichnet, gemessen | Angenommen (elf Festlegungen; Rohnotierungen ab sofort speichern; Skew erst messen, Strukturvergleich zunächst nur live; keine Zinsannahme; eigene Tabelle und Version) |
+| [0059](0059-fernzugang-dashboard-overlay-netz.md) | Fernzugang zum Dashboard über ein identitätsgebundenes Overlay-Netz — keine öffentliche Erreichbarkeit | Vorgeschlagen, am 2026-09-07 **zurückgestellt** (Neubewertung von ADR 0049; Grundlage: [Spike-Bericht F12](../requirements/f12-externer-zugriff-spike.md), dort Abschnitt 15 zum Stand. Für das Dashboard nicht weiterverfolgt — der Weg verlangt Client-Software je Gerät —, für die Fernwartung des Servers offen. Weder angenommen noch abgelehnt; angenommen löste er die Expositionsaussage aus 0049 ab und ersetzte Punkt 3 aus 0052) |
 | [0060](0060-dashboard-ausserhalb-des-servers.md) | Das Dashboard läuft außerhalb des Servers — Snapshot je Lauf, ausgehend hochgeladen, Anmeldung an der Kante, Zero-Knowledge als Zielstufe | Vorgeschlagen (zweiter Ansatz zu F12; Grundlage: [Spike-Bericht](../requirements/f12-externes-hosting-spike.md); Annahme erst nach bestandenem PoC; die Nummer 0059 ist durch den zurückgestellten ersten Ansatz auf dem Branch `feature/spike-dashboard-externer-zugriff` belegt — vor dem Merge von 0060 gehört 0059 als „Vorgeschlagen, zurückgestellt" nach `dev`, damit die Nummerierung lückenlos bleibt) |
 
 ## Offene Entscheidungen
@@ -213,13 +214,20 @@ ADR, sobald die nötigen Informationen vorliegen:
   und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
   bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
   letzte Sprint-blockierende Frage dieser Liste beantwortet.
-  **Die angekündigte Neubewertung läuft in zwei Spikes** (beide vom
-  2026-09-06, beide nur vorgeschlagen): Der erste — privater Fernzugang
-  zum Server über ein identitätsgebundenes Overlay-Netz, ADR 0059 — ist
-  zurückgestellt und liegt auf dem Branch
-  `feature/spike-dashboard-externer-zugriff`. Der zweite — das Dashboard
-  läuft außerhalb des Servers, der Server lädt nach jedem Lauf nur
-  ausgehend einen Snapshot hoch — steht als
+- Externer Zugriff auf das Dashboard (F12) — **entschieden.** Das MVP ist
+  ausschließlich aus dem eigenen Netz (LAN/VPN) erreichbar, ohne Exposition
+  und ohne eigene Authentifizierung; beides wird nach stabilem Betrieb neu
+  bewertet. Siehe [ADR 0049](0049-dashboard-mvp-nur-lan.md). Damit ist die
+  letzte Sprint-blockierende Frage dieser Liste beantwortet.
+  **Die angekündigte Neubewertung liegt in zwei Spikes vor, beide nur
+  vorgeschlagen.** Der erste — privater Fernzugang zum Server über ein
+  identitätsgebundenes Overlay-Netz,
+  [ADR 0059](0059-fernzugang-dashboard-overlay-netz.md) mit
+  [Spike-Bericht](../requirements/f12-externer-zugriff-spike.md) — ist am
+  2026-09-07 zurückgestellt worden, weil er auf jedem zugreifenden Gerät
+  Client-Software verlangt; für die Fernwartung des Servers bleibt er
+  offen. Der zweite — das Dashboard läuft außerhalb des Servers, der Server
+  lädt nach jedem Lauf nur ausgehend einen Snapshot hoch — steht als
   [ADR 0060](0060-dashboard-ausserhalb-des-servers.md) mit
-  [Spike-Bericht](../requirements/f12-externes-hosting-spike.md). Bis zu
-  einer Annahme gilt ADR 0049 unverändert.
+  [Spike-Bericht](../requirements/f12-externes-hosting-spike.md). **Bis eine
+  der beiden Entscheidungen angenommen ist, gilt ADR 0049 unverändert.**

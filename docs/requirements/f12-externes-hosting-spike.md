@@ -11,8 +11,10 @@
 - Gegenstand: Frage 13 aus Doc 10 §19 (F12, externer Zugriff auf das
   Dashboard), **zweiter Ansatz.** Der erste Spike vom selben Tag —
   privater Fernzugang zum Server über ein identitätsgebundenes Overlay-Netz
-  — ist **zurückgestellt**; er liegt mit ADR 0059 (Vorgeschlagen, nicht
-  angenommen) auf dem Branch `feature/spike-dashboard-externer-zugriff`.
+  — ist **zurückgestellt**: siehe
+  [ADR 0059](../adr/0059-fernzugang-dashboard-overlay-netz.md) (Vorgeschlagen,
+  nicht angenommen) und den
+  [Overlay-Spike](f12-externer-zugriff-spike.md), dort Abschnitt 15 zum Stand.
   Dieser Spike prüft den umgekehrten Weg: Nicht der Nutzer kommt zum
   Server, sondern die Ergebnisse gehen zum Nutzer — das Dashboard läuft
   außerhalb des Windows-Servers, und der Server bleibt unerreichbar.
@@ -1030,8 +1032,9 @@ flowchart LR
 
 Dokumente: Doc 01, 02, 10 (§3, §6.14, §6.15, §13, §14, §19), 11, 12, 13,
 14; ADR 0005, 0017, 0022, 0024, 0031, 0036, 0040, 0044, 0045, 0047, 0049,
-0052, 0053; der zurückgestellte Spike-Bericht zu F12 samt ADR 0059 (Branch
-`feature/spike-dashboard-externer-zugriff`).
+0052, 0053; der zurückgestellte
+[Overlay-Spike](f12-externer-zugriff-spike.md) samt
+[ADR 0059](../adr/0059-fernzugang-dashboard-overlay-netz.md).
 
 Code und Konfiguration: `frontend/next.config.ts`, `frontend/src/lib/api.ts`;
 `backend/pyproject.toml`, `backend/requirements.lock.txt`,

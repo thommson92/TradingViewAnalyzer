@@ -10,8 +10,8 @@ Dashboard (F12) für das MVP verneint und die Neubewertung nach stabilem
 Betrieb angekündigt. Der Tageslauf läuft seit dem 2026-09-01 automatisch.
 Ein erster Spike vom 2026-09-06 hat den **Zugang zum Server** untersucht —
 privater Fernzugang über ein identitätsgebundenes Overlay-Netz — und ist
-mit ADR 0059 (Vorgeschlagen) auf dem Branch
-`feature/spike-dashboard-externer-zugriff` **zurückgestellt**: Der Weg
+mit [ADR 0059](0059-fernzugang-dashboard-overlay-netz.md) (Vorgeschlagen)
+**zurückgestellt**: Der Weg
 verlangt Client-Software auf jedem Gerät, und der Inhaber will von
 beliebigen Geräten aus zugreifen, mit einer einfachen Anmeldung. Der
 Zugriff auf das Dashboard gilt ihm als nicht sicherheitskritisch; der
@@ -246,9 +246,10 @@ ADR 0024, aus demselben Grund.
 - **Die Deployment-Historie des Anbieters ist eine Datenhalde.** Alte
   Fassungen sind zu löschen; ein Anbieter ohne Löschmöglichkeit scheidet
   aus. Ein Passphrase-Wechsel macht alte Chiffrate nicht unlesbar.
-- **Die Nummer 0059 ist auf einem Branch belegt.** Vor dem Merge dieses
-  ADR gehört ADR 0059 als „Vorgeschlagen, zurückgestellt" nach `dev`, damit
-  die Nummerierung lückenlos bleibt (ADR-README: fortlaufend).
+- **ADR 0059 liegt seit dem 2026-09-07 in `dev`** — als „Vorgeschlagen,
+  zurückgestellt", damit die Nummerierung lückenlos bleibt. Sein
+  Zurückstellungs-Nachtrag und Abschnitt 15 seines Spike-Berichts halten
+  fest, was dort weitergilt und wo jemand wieder einsteigt.
 - **Der Export wächst** mit den Berichten; nur Neues wird hochgeladen, eine
   Archivgrenze ist eine spätere Entscheidung.
 - **Zwei Anmeldeschritte in Stufe 2** (Anbieter, dann Passphrase); der
