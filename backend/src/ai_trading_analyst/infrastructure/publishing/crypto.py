@@ -120,6 +120,31 @@ def groessenklasse(laenge: int) -> int:
     return klasse
 
 
+def packe(klartext: bytes) -> bytes:
+    """Komprimieren und auf eine Groessenklasse auffuellen.
+
+    Das Ergebnis ist genau das, was verschluesselt wird -- und genau das, was
+    der Browser nach dem Entschluesseln vorfindet. Diese Funktion ist deshalb
+    die **Formatdefinition** und keine Interna: Wer sie aendert, aendert das,
+    was die Gegenseite lesen koennen muss.
+
+    ``mtime=0`` in gzip: Ohne das stuende der Zeitpunkt im Kopf jeder Datei,
+    und zwei Exporte desselben Inhalts ergaeben verschiedene Bytes -- der
+    Vergleich am Klartext bliebe zwar richtig, aber jede Datei traege eine
+    Zeitangabe nach draussen, die niemand gebraucht hat.
+    """
+    gepackt = gzip.compress(klartext, compresslevel=9, mtime=0)
+    roh = _LAENGENFELD.pack(len(gepackt)) + gepackt
+    return roh.ljust(groessenklasse(len(roh)), b"\x00")
+
+
+def entpacke(gefuellt: bytes) -> bytes:
+    """Die Gegenrichtung zu ``packe``."""
+    (laenge,) = _LAENGENFELD.unpack(gefuellt[: _LAENGENFELD.size])
+    anfang = _LAENGENFELD.size
+    return gzip.decompress(gefuellt[anfang : anfang + laenge])
+
+
 class Verschluesselung:
     """Verschluesselt einzelne Dateien des Datenbaums.
 
@@ -168,10 +193,8 @@ class Verschluesselung:
         komprimieren laesst. Auffuellen dazwischen, damit die Groesse des
         Chiffrats nichts mehr ueber die des Inhalts sagt.
         """
-        gepackt = gzip.compress(klartext, compresslevel=9, mtime=0)
-        roh = _LAENGENFELD.pack(len(gepackt)) + gepackt
-        gefuellt = roh.ljust(groessenklasse(len(roh)), b"\x00")
         nonce = os.urandom(NONCE_LAENGE)
+        gefuellt = packe(klartext)
         return nonce + self._aead.encrypt(nonce, gefuellt, self._zusatzdaten(pfad))
 
     def entschluessele(self, pfad: str, chiffrat: bytes) -> bytes:
@@ -181,10 +204,7 @@ class Verschluesselung:
         Probe darauf, dass beide Seiten dasselbe Format meinen.
         """
         nonce, rest = chiffrat[:NONCE_LAENGE], chiffrat[NONCE_LAENGE:]
-        gefuellt = self._aead.decrypt(nonce, rest, self._zusatzdaten(pfad))
-        (laenge,) = _LAENGENFELD.unpack(gefuellt[: _LAENGENFELD.size])
-        anfang = _LAENGENFELD.size
-        return gzip.decompress(gefuellt[anfang : anfang + laenge])
+        return entpacke(self._aead.decrypt(nonce, rest, self._zusatzdaten(pfad)))
 
 
 def kopf(

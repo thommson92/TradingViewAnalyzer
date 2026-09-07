@@ -1,0 +1,136 @@
+"""Der Exportschritt als Ganzes (ADR 0060, Entscheidung Punkt 2).
+
+Er tut drei Dinge -- Baum holen, schreiben, Zustand fortschreiben -- und die
+Tests hier pruefen vor allem das dritte: Salt und Baumkennung muessen ueber
+Laeufe hinweg stehen bleiben, sonst waere jeder Lauf ein vollstaendig neuer
+Baum und damit ein vollstaendiger Upload.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from ai_trading_analyst.domain.scheduling import DashboardPublisherError
+from ai_trading_analyst.infrastructure.publishing.crypto import MINDEST_ITERATIONEN
+from ai_trading_analyst.infrastructure.publishing.publisher import (
+    Exportziel,
+    SnapshotPublisher,
+)
+from ai_trading_analyst.infrastructure.publishing.writer import Exportzustand
+
+PASSPHRASE = "eine-lange-zufaellige-passphrase-aus-dem-manager"
+
+
+def baum(*paare: tuple[str, bytes]) -> Iterator[tuple[str, bytes]]:
+    yield from paare
+
+
+def publisher(
+    tmp_path: Path,
+    *,
+    passphrase: str | None = PASSPHRASE,
+    iterationen: int = MINDEST_ITERATIONEN,
+    inhalt: tuple[tuple[str, bytes], ...] = (("data/manifest.json", b"{}"),),
+) -> SnapshotPublisher:
+    return SnapshotPublisher(
+        snapshot=lambda: baum(*inhalt),
+        ziel=Exportziel(
+            wurzel=tmp_path / "public",
+            zustandsdatei=tmp_path / "zustand.json",
+            passphrase=passphrase,
+            iterationen=iterationen,
+        ),
+    )
+
+
+class TestStufe1:
+    def test_schreibt_klartext_und_keinen_kopf(self, tmp_path: Path) -> None:
+        publisher(tmp_path, passphrase=None).schreibe_baum()
+        assert (tmp_path / "public" / "data" / "manifest.json").read_bytes() == b"{}"
+        assert not (tmp_path / "public" / "data" / "manifest.head.json").exists()
+
+
+class TestStufe2:
+    def test_schreibt_chiffrat_und_kopf(self, tmp_path: Path) -> None:
+        publisher(tmp_path).schreibe_baum()
+        datenwurzel = tmp_path / "public" / "data"
+        kopf = json.loads((datenwurzel / "manifest.head.json").read_text(encoding="utf-8"))
+        assert kopf["iterations"] == MINDEST_ITERATIONEN
+        assert (datenwurzel / kopf["manifest"]).is_file()
+        assert (datenwurzel / kopf["manifest"]).read_bytes() != b"{}"
+
+    def test_der_kopf_nennt_den_namen_des_manifests(self, tmp_path: Path) -> None:
+        """Der Browser hat sonst keinen Anfang: Alle anderen Namen stehen im
+        Manifest, und das Manifest selbst ist ebenso opak."""
+        publisher(tmp_path).schreibe_baum()
+        datenwurzel = tmp_path / "public" / "data"
+        kopf = json.loads((datenwurzel / "manifest.head.json").read_text(encoding="utf-8"))
+        namen = {p.name for p in datenwurzel.iterdir()} - {"manifest.head.json"}
+        assert kopf["manifest"] in namen
+
+    def test_zu_wenige_runden_brechen_ab(self, tmp_path: Path) -> None:
+        with pytest.raises(DashboardPublisherError, match="Verschluesselung"):
+            publisher(tmp_path, iterationen=1000).schreibe_baum()
+
+
+class TestZustandUeberLaeufe:
+    def test_salt_und_baumkennung_bleiben_stehen(self, tmp_path: Path) -> None:
+        """Wuerden sie je Lauf neu gezogen, aenderte sich jeder Dateiname."""
+        veroeffentlicher = publisher(tmp_path)
+        veroeffentlicher.schreibe_baum()
+        erst = Exportzustand.lade(tmp_path / "zustand.json")
+
+        veroeffentlicher.schreibe_baum()
+        zweit = Exportzustand.lade(tmp_path / "zustand.json")
+
+        assert erst is not None and zweit is not None
+        assert erst.salt == zweit.salt
+        assert erst.baum_id == zweit.baum_id
+        assert erst.dateien == zweit.dateien
+
+    def test_zweiter_lauf_schreibt_nichts_neu(self, tmp_path: Path) -> None:
+        veroeffentlicher = publisher(tmp_path)
+        veroeffentlicher.schreibe_baum()
+        bericht = veroeffentlicher.schreibe_baum()
+        assert bericht.geschrieben == 0
+        assert bericht.unveraendert == 1
+
+    def test_voll_schreibt_alles_neu(self, tmp_path: Path) -> None:
+        """Der Weg nach jedem Zweifel, ob draussen steht, was hier liegt."""
+        veroeffentlicher = publisher(tmp_path)
+        veroeffentlicher.schreibe_baum()
+        bericht = veroeffentlicher.schreibe_baum(voll=True)
+        assert bericht.geschrieben == 1
+        assert bericht.unveraendert == 0
+
+    def test_neue_passphrase_ergibt_einen_neuen_baum(self, tmp_path: Path) -> None:
+        """Alte Dateien gelten danach als verwaist und verschwinden -- statt
+        als lesbare Reste unter alten Namen liegen zu bleiben."""
+        publisher(tmp_path).schreibe_baum()
+        vorher = {p.name for p in (tmp_path / "public" / "data").iterdir()}
+
+        bericht = publisher(tmp_path, passphrase="eine-ganz-andere-passphrase").schreibe_baum()
+
+        nachher = {p.name for p in (tmp_path / "public" / "data").iterdir()}
+        assert bericht.geschrieben == 1
+        assert bericht.entfernt == 1
+        assert nachher != vorher
+        assert nachher & vorher == {"manifest.head.json"}
+
+
+class TestFehler:
+    def test_nicht_schreibbares_ziel_wird_zum_portfehler(self, tmp_path: Path) -> None:
+        """Der Tageslauf isoliert genau diesen Fehlertyp."""
+        sperre = tmp_path / "public"
+        sperre.write_text("keine Datei erwartet, sondern ein Verzeichnis", encoding="utf-8")
+        with pytest.raises(DashboardPublisherError, match="nicht schreibbar"):
+            publisher(tmp_path).schreibe_baum()
+
+    def test_publish_setzt_den_port_um(self, tmp_path: Path) -> None:
+        """Die Portfassung ohne Rueckgabewert; der Bericht steht im Protokoll."""
+        publisher(tmp_path).publish()
+        assert (tmp_path / "public" / "data" / "manifest.head.json").is_file()

@@ -5,9 +5,11 @@ from .crypto import (
     Exportschluessel,
     KryptoKonfigurationError,
     Verschluesselung,
+    entpacke,
     groessenklasse,
     kopf,
     leite_schluessel_ab,
+    packe,
 )
 from .publisher import FORMAT_VERSION, MANIFEST_PFAD, Exportziel, SnapshotPublisher
 from .writer import Dateizustand, Exportzustand, Schreibbericht, Verzeichnisschreiber
@@ -25,7 +27,9 @@ __all__ = [
     "SnapshotPublisher",
     "Verschluesselung",
     "Verzeichnisschreiber",
+    "entpacke",
     "groessenklasse",
     "kopf",
     "leite_schluessel_ab",
+    "packe",
 ]
