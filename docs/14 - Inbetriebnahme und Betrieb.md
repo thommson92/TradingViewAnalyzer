@@ -1019,6 +1019,121 @@ Mobilfunknetz (WLAN aus) ist die Adresse **nicht** erreichbar.
 
 ---
 
+# Stufe K — Das Dashboard außerhalb des Servers
+
+**Noch nicht entschieden.** [ADR 0060](adr/0060-dashboard-ausserhalb-des-servers.md)
+ist vorgeschlagen; angenommen wird es erst nach einem Proof of Concept beim
+Anbieter. Diese Stufe beschreibt deshalb nur, was **ohne** Anbieter geht:
+den Datenbaum auf dem Server erzeugen und nachsehen, ob er trägt. Kein
+Konto, kein Token, kein Upload, keine Firewall-Regel — Stufe J bleibt
+unberührt, und der Server bekommt nichts Eingehendes.
+
+Der Gedanke kehrt Stufe J um: Nicht der Nutzer kommt zum Server, sondern die
+Ergebnisse gehen zum Nutzer. Der Server schreibt nach jedem Lauf einen
+Datenbaum aus denselben lesenden Endpunkten, die auch das LAN-Dashboard
+nutzt, und verschlüsselt ihn. Entschlüsselt wird erst im Browser.
+
+## Schritt 1 — Passphrase erzeugen und ablegen
+
+Lang und zufällig, nicht ausgedacht — sie wird nie getippt, sondern kommt
+aus dem Passwortmanager:
+
+```powershell
+# 32 zufällige Bytes als Base64. Das Ergebnis in den Passwortmanager, und
+# nur dorthin.
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
+```
+
+Danach in die `.env` im Projektwurzelverzeichnis, zu den übrigen
+`ATA_`-Werten:
+
+```
+ATA_DASHBOARD_EXPORT_PASSPHRASE=<die erzeugte Zeichenfolge>
+```
+
+**Wer sie verliert, verliert die Anzeige, nicht die Daten** — die liegen in
+der Datenbank auf dem Server. Ein Wechsel der Passphrase schreibt den ganzen
+Datenbaum neu; die alten Dateien verschwinden dabei.
+
+## Schritt 2 — Die Oberfläche im Zero-Knowledge-Modus bauen
+
+Das ist ein **anderer Build** als der aus Stufe J: Er nimmt ausschließlich
+Chiffrat an und kennt keine API. Das Verfahren ist Eigenschaft des Builds und
+steht in keiner Datei, die neben den Daten liegt — wer beim Anbieter
+schreiben darf, kann damit keinen Klartextmodus einschalten.
+
+```powershell
+cd C:\...\frontend
+$env:NEXT_PUBLIC_DATENMODUS = "verschluesselt"
+npm run build
+Remove-Item Env:\NEXT_PUBLIC_DATENMODUS
+```
+
+**Beide Builds landen in demselben `frontend\out`** — Next kennt nur dieses
+eine Ausgabeverzeichnis. Genau daraus liefert der Dienst aus Stufe J das
+LAN-Dashboard aus. Wer hier baut, überschreibt es also; der
+Zero-Knowledge-Build fände im eigenen Netz keine API und zeigte nur die
+Passphrase-Abfrage.
+
+Deshalb: das Ergebnis wegkopieren und den LAN-Build sofort wiederherstellen.
+
+```powershell
+Copy-Item -Recurse -Force out ..\var\dashboard-oberflaeche
+npm run build          # ohne die Variable -- das ist wieder der LAN-Build
+```
+
+Sobald der Weg nach draußen steht, gehört dieser Schritt in ein Skript;
+solange die Entscheidung aussteht, ist er Handarbeit unter Aufsicht.
+
+## Schritt 3 — Den Datenbaum schreiben
+
+```powershell
+cd C:\...\backend
+.venv\Scripts\python.exe -m ai_trading_analyst.cli publish --directory var\dashboard
+```
+
+Die Ausgabe nennt, wie viele Dateien entstanden, wie viele unverändert
+blieben und wie viele entfernt wurden. Beim ersten Mal ist alles neu; beim
+zweiten Aufruf muss **genau eine** Datei neu geschrieben werden — das
+Manifest, es trägt den Zeitpunkt.
+
+## Schritt 4 — Nachsehen, was dort liegt
+
+```powershell
+# Die Dateinamen sagen nichts:
+Get-ChildItem var\dashboard\data | Select-Object -First 5 Name, Length
+
+# Der Klartextkopf ist die einzige lesbare Datei -- er nennt Salt und
+# Rundenzahl, damit der Browser den Schluessel ableiten kann:
+Get-Content var\dashboard\data\manifest.head.json
+
+# Und keine einzige Datei enthaelt ein Symbol im Klartext:
+Select-String -Path var\dashboard\data\* -Pattern "AAPL" -List
+```
+
+**Abnahmekriterien dieser Stufe:** Die letzte Suche findet nichts. Der Kopf
+nennt `PBKDF2-HMAC-SHA256`, `AES-256-GCM` und mindestens 600.000 Runden. Der
+zweite Aufruf aus Schritt 3 schreibt nur das Manifest neu. Und der
+Zustandsvermerk (`var\dashboard.zustand.json`) liegt **außerhalb** des
+Verzeichnisses, das später hochgeladen würde — er enthält die Zuordnung von
+Pfad zu Dateiname.
+
+## Schritt 5 — Im Tageslauf einschalten (erst nach Schritt 4)
+
+In `config/default.yaml` unter `dashboard_export`: `target: directory` und
+`directory: var/dashboard`. Danach schreibt der Tageslauf den Baum am Ende
+jedes Laufs selbst. Ein Fehlschlag hält den Lauf nicht an — er kommt als
+eigene Telegram-Meldung „Dashboard nicht aktualisiert" und steht im
+Protokoll.
+
+**Was hier ausdrücklich noch nicht steht:** Anbieterwahl, Konto, Token,
+Zugriffsregel, Upload und die Notfallkarte dazu. Das ist Gegenstand des
+Proof of Concept aus Abschnitt 11 des
+[Spike-Berichts](requirements/f12-externes-hosting-spike.md) und kommt in
+diese Stufe, sobald ADR 0060 angenommen ist.
+
+---
+
 # Laufender Betrieb
 
 ## Betriebszustand
@@ -1040,6 +1155,10 @@ automatischen Tageslauf, nur manuell gestartete.
 (Stufe J), auf dem Server aber noch nicht eingerichtet. Diese Zeile wird
 umgeschrieben, sobald er dort steht — bis dahin gibt es genau einen
 geplanten Vorgang, den Tageslauf.
+
+**Der Export nach draußen ebenfalls nicht** (Stufe K). Er ist gebaut und
+getestet, `dashboard_export.target` steht auf `none`, und die Entscheidung
+darüber steht aus.
 
 ## Nach jedem Serverneustart
 
