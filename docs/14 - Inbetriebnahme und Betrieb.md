@@ -1075,15 +1075,22 @@ LAN-Dashboard aus. Wer hier baut, überschreibt es also; der
 Zero-Knowledge-Build fände im eigenen Netz keine API und zeigte nur die
 Passphrase-Abfrage.
 
-Deshalb: das Ergebnis wegkopieren und den LAN-Build sofort wiederherstellen.
+Deshalb: das Ergebnis in das Verzeichnis kopieren, das später hinausgeht,
+und den LAN-Build sofort wiederherstellen.
 
 ```powershell
-Copy-Item -Recurse -Force out ..\var\dashboard-oberflaeche
+New-Item -ItemType Directory -Force ..\var\dashboard | Out-Null
+Copy-Item -Recurse -Force out\* ..\var\dashboard\
 npm run build          # ohne die Variable -- das ist wieder der LAN-Build
 ```
 
-Sobald der Weg nach draußen steht, gehört dieser Schritt in ein Skript;
-solange die Entscheidung aussteht, ist er Handarbeit unter Aufsicht.
+In dasselbe `var\dashboard` schreibt Schritt 3 gleich den Datenbaum unter
+`data\`. Der Exportschritt fasst dabei **nur** `data\` an — die Oberfläche
+daneben bleibt unberührt, und beides zusammen ist genau das, was später als
+ein Deployment hinaufginge.
+
+Sobald der Weg nach draußen steht, gehört das in ein Skript; solange die
+Entscheidung aussteht, ist es Handarbeit unter Aufsicht.
 
 ## Schritt 3 — Den Datenbaum schreiben
 
