@@ -1136,6 +1136,13 @@ cd C:\...\backend
 .venv\Scripts\python.exe -m ai_trading_analyst.cli publish --directory var\dashboard
 ```
 
+**Kein `--provider` nötig, und das ist Absicht.** Die Kerzen für den Chart
+kommen immer aus dem Bestand in der Datenbank, nie von einem Anbieter — der
+Export zeigt an, was gerechnet wurde, und beschafft nichts. Voraussetzung ist
+deshalb ein gefüllter Bestand aus dem Backfill. Findet der Export zu **keiner
+einzigen** Aktie eine Kursreihe, bricht er ab, statt einen Stand ohne Charts
+zu schreiben.
+
 Die Ausgabe nennt, wie viele Dateien entstanden, wie viele unverändert
 blieben und wie viele entfernt wurden. Beim ersten Mal ist alles neu; beim
 zweiten Aufruf muss **genau eine** Datei neu geschrieben werden — das

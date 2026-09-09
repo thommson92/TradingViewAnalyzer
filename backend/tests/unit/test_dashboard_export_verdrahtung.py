@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_trading_analyst.bootstrap import build_dashboard_publisher
+from ai_trading_analyst.bootstrap import build_dashboard_publisher, project_root
 from ai_trading_analyst.config.loader import load_config
 from ai_trading_analyst.config.settings import (
     AppConfig,
@@ -167,3 +167,60 @@ class TestKommandozeile:
 
         assert code == 2
         assert "abgeschaltet" in capsys.readouterr().err
+
+
+class TestChartquelle:
+    """Woher die Kerzen fuer den Chart kommen -- und woher ausdruecklich nicht.
+
+    Auf dem Server steht ``market_data.provider`` bewusst auf ``fixture``,
+    damit ``git pull`` keinen lokalen Diff vorfindet; die produktive Quelle
+    wird je Lauf ueber die Kommandozeile eingeschaltet. Ein Export, der
+    diesen Wert erbte, baute den Chart aus **erfundenen** Kursen -- und
+    stellte sie neben echte Analyseergebnisse, ohne sie als erfunden
+    kenntlich zu machen.
+
+    Beim ersten Export auf dem Server ist genau das passiert. Die Symbole der
+    Watchlist stehen zufaellig in keiner Fixture, deshalb blieb der Baum
+    chartlos statt falsch. Dieser Test haelt die Lehre daraus fest.
+    """
+
+    def test_der_fixture_anbieter_wird_nicht_uebernommen(self) -> None:
+        from ai_trading_analyst.bootstrap import build_chart_market_data
+        from ai_trading_analyst.infrastructure.fixtures.market_data_provider import (
+            FixtureMarketDataProvider,
+        )
+
+        geladen = load_config()
+        basis = geladen.config
+        assert basis.market_data.provider == "fixture", (
+            "Die Voreinstellung hat sich geaendert -- dieser Test prueft dann nichts mehr."
+        )
+
+        quelle = build_chart_market_data(
+            basis, basis.require_indicators(), project_root(geladen.source_path), uow_factory()
+        )
+        assert not isinstance(quelle(), FixtureMarketDataProvider)
+
+    def test_die_kerzen_kommen_aus_dem_bestand_und_nicht_von_der_tws(self) -> None:
+        """Kein Chart darf eine TWS-Verbindung aufbauen (ADR 0052)."""
+        from ai_trading_analyst.bootstrap import build_chart_market_data
+        from ai_trading_analyst.infrastructure.ibkr import IbkrMarketDataProvider
+        from ai_trading_analyst.infrastructure.persistence.stored_bar_source import (
+            StoredBarSource,
+        )
+
+        geladen = load_config()
+        auf_live = geladen.config.model_copy(
+            update={
+                "market_data": geladen.config.market_data.model_copy(update={"source": "live"})
+            }
+        )
+        quelle = build_chart_market_data(
+            auf_live,
+            auf_live.require_indicators(),
+            project_root(geladen.source_path),
+            uow_factory(),
+        )
+        anbieter = quelle()
+        assert isinstance(anbieter, IbkrMarketDataProvider)
+        assert isinstance(anbieter._bar_source, StoredBarSource)

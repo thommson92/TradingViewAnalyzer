@@ -25,6 +25,7 @@ from ai_trading_analyst.domain.analysis import (
     UnitOfWork,
 )
 from ai_trading_analyst.domain.backtesting import BacktestParameters
+from ai_trading_analyst.domain.scheduling import DashboardPublisherError
 from ai_trading_analyst.domain.screening import CandidateRuleParameters
 from ai_trading_analyst.infrastructure.publishing import (
     FORMAT_VERSION,
@@ -260,6 +261,33 @@ class TestFehlendeCharts:
         manifest = json.loads(baum(quellen)[MANIFEST_PFAD].decode("utf-8"))
         assert manifest["stocks_without_chart"] == ["MSFT"]
         assert manifest["counts"]["charts"] == 1
+
+    def test_keine_einzige_aktie_mit_chart_bricht_den_export_ab(self) -> None:
+        """Der dritte Weg zu einem Baum ohne Charts -- und der leiseste.
+
+        Nicht die Datenbank bricht ab, und nicht eine Aktie verliert ihre
+        Reihe: **jede** verliert sie, jede einzeln und jede mit einer
+        Meldung, die fuer sich genommen harmlos ist. Auf dem Server ist das
+        beim ersten Export tatsaechlich eingetreten, weil der Export den
+        Fixture-Anbieter erbte und der die Symbole der Watchlist nicht kennt.
+
+        Das Ergebnis waere derselbe Schaden wie beim Datenbankabriss: ein
+        vollstaendiges Manifest mit null Charts, und danach entfernt der
+        Schreiber jede frueher exportierte Chartdatei als verwaist.
+        """
+        quellen, _ = quellen_mit(ohne_chart=frozenset({"AAPL", "MSFT"}))
+        with pytest.raises(DashboardPublisherError, match="Keine einzige"):
+            baum(quellen)
+
+    def test_ohne_aktien_ist_ein_baum_ohne_charts_in_ordnung(self) -> None:
+        """Ein frisch aufgesetzter Server hat noch keine Aktien.
+
+        Der Waechter darf die Abwesenheit von Aktien nicht mit dem Verlust
+        ihrer Kursreihen verwechseln.
+        """
+        quellen, _ = quellen_mit(symbole=())
+        manifest = json.loads(baum(quellen)[MANIFEST_PFAD].decode("utf-8"))
+        assert manifest["counts"]["charts"] == 0
 
     def test_ein_datenbankabriss_bricht_den_export_ab(self) -> None:
         """Ausdruecklich anders als eine fehlende Kursreihe.

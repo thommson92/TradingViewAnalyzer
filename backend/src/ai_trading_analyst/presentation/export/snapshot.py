@@ -43,6 +43,7 @@ from ai_trading_analyst.domain.analysis import (
 )
 from ai_trading_analyst.domain.backtesting import BacktestParameters
 from ai_trading_analyst.domain.report import REPORT_SCHEMA_VERSION
+from ai_trading_analyst.domain.scheduling import DashboardPublisherError
 from ai_trading_analyst.domain.screening import SIGNAL_RULE_VERSION, CandidateRuleParameters
 from ai_trading_analyst.observability.logging_setup import get_logger
 from ai_trading_analyst.presentation.api import views
@@ -320,36 +321,51 @@ def iter_snapshot(
     # zweihundertmal erneut nachzuschlagen brauchte eine zweite Transaktion
     # fuer nichts.
     marktdaten = quellen.chart_market_data()
-    if True:
-        for aktie in aktien:
-            symbol = aktie.symbol
-            try:
-                reihe = marktdaten.get_candle_series(aktie)
-            except MarketDataUnavailableError:
-                # **Zuerst der Ausfall, und die Reihenfolge ist der ganze
-                # Punkt:** ``MarketDataUnavailableError`` ist Unterklasse von
-                # ``MarketDataProviderError``. Stuende die breite Klausel
-                # zuerst, finge sie den Datenbankabriss mit -- und der Export
-                # schriebe ein vollstaendiges Manifest mit null Charts, worauf
-                # der Schreiber jede bisher exportierte Chartdatei als
-                # verwaist entfernte. Draussen stuende dann ein Stand, der wie
-                # ein regulaerer aussieht und keinen einzigen Chart hat.
-                # Dieselbe Reihenfolge wie im Endpunkt (``api/v1/stocks.py``).
-                raise
-            except MarketDataProviderError as fehler:
-                # Eine Aktie ohne Kerzen im Bestand kostet dagegen nur ihren
-                # Chart. Das ist eine Aussage ueber die Datenlage, kein
-                # Betriebsproblem, und sie steht im Manifest.
-                _logger.warning("Kein Chart fuer %s im Export: %s", symbol, fehler)
-                fehlende_charts.append(symbol)
-                continue
-            charts_gesamt += 1
-            yield datei(
-                f"data/stocks/{namen[symbol]}/chart.json",
-                _als_json(
-                    build_chart_payload(symbol, reihe, quellen.candidate_rule_parameters)
-                ),
-            )
+    for aktie in aktien:
+        symbol = aktie.symbol
+        try:
+            reihe = marktdaten.get_candle_series(aktie)
+        except MarketDataUnavailableError:
+            # **Zuerst der Ausfall, und die Reihenfolge ist der ganze
+            # Punkt:** ``MarketDataUnavailableError`` ist Unterklasse von
+            # ``MarketDataProviderError``. Stuende die breite Klausel
+            # zuerst, finge sie den Datenbankabriss mit -- und der Export
+            # schriebe ein vollstaendiges Manifest mit null Charts, worauf
+            # der Schreiber jede bisher exportierte Chartdatei als
+            # verwaist entfernte. Draussen stuende dann ein Stand, der wie
+            # ein regulaerer aussieht und keinen einzigen Chart hat.
+            # Dieselbe Reihenfolge wie im Endpunkt (``api/v1/stocks.py``).
+            raise
+        except MarketDataProviderError as fehler:
+            # Eine Aktie ohne Kerzen im Bestand kostet dagegen nur ihren
+            # Chart. Das ist eine Aussage ueber die Datenlage, kein
+            # Betriebsproblem, und sie steht im Manifest.
+            _logger.warning("Kein Chart fuer %s im Export: %s", symbol, fehler)
+            fehlende_charts.append(symbol)
+            continue
+        charts_gesamt += 1
+        yield datei(
+            f"data/stocks/{namen[symbol]}/chart.json",
+            _als_json(build_chart_payload(symbol, reihe, quellen.candidate_rule_parameters)),
+        )
+
+    if aktien and charts_gesamt == 0:
+        # **Vor dem Manifest, und deshalb vor dem gueltigen Stand.** Jede
+        # einzelne Aktie hat hier ihren Chart verloren, und keine davon hat
+        # den Ausfall gemeldet, der oben zum Abbruch fuehrt. Das ist keine
+        # Aussage ueber die Datenlage mehr, sondern ueber die Konfiguration:
+        # ein Bestand ohne Kerzen, oder ein Anbieter, der keine liefert.
+        #
+        # Ohne diesen Abbruch entstuende genau der Stand, den die Klausel
+        # darueber verhindert -- nur auf dem anderen Weg dorthin: ein
+        # vollstaendiges Manifest ohne einen einzigen Chart, worauf der
+        # Schreiber alle frueher exportierten Charts als verwaist entfernt.
+        raise DashboardPublisherError(
+            f"Keine einzige der {len(aktien)} Aktien hat eine Kerzenreihe geliefert. "
+            "Der Export bricht ab, statt einen Stand ohne Charts zu schreiben. "
+            "Zu pruefen: ist der Bestand gefuellt (Backfill), und liest der Export "
+            "ihn auch -- der Fixture-Anbieter kennt die Symbole der Watchlist nicht."
+        )
 
     yield Exportdatei(
         MANIFEST_PFAD,

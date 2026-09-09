@@ -198,6 +198,54 @@ def build_indicator_parameters(indicators: IndicatorConfig) -> IndicatorParamete
     )
 
 
+def build_chart_market_data(
+    config: AppConfig,
+    indicators: IndicatorConfig,
+    root: Path,
+    uow_factory: Callable[[], UnitOfWork],
+) -> Callable[[], MarketDataProvider]:
+    """Die Kerzenquelle fuer Charts: **immer** der Bestand, nie ein Anbieter.
+
+    Zwei Aufrufer, dieselbe Anforderung -- der Chart-Endpunkt (Stufe J) und
+    der Snapshot-Export (Stufe K). Beide zeigen Kerzen an, die schon
+    gerechnet wurden; keiner von beiden darf welche beschaffen.
+
+    **Der Anbieter wird hier gesetzt und nicht uebernommen.** Die
+    Konfiguration steht auf dem Server bewusst auf ``fixture``, damit
+    ``git pull`` keinen lokalen Diff vorfindet; eingeschaltet wird ``ibkr``
+    je Lauf ueber die Kommandozeile. Wer diesen Wert hier erbte, baute den
+    Chart aus **Fixture-Daten** -- erfundenen Kursen, die neben echten
+    Analyseergebnissen stuenden und nicht als erfunden zu erkennen waeren.
+    Genau das verbietet Doc 12 ("Keine erfundenen Werte"), und es ist beim
+    ersten Export auf dem Server auch tatsaechlich passiert.
+
+    ``ibkr`` heisst hier nur: dieselbe Kerzenbildung und dieselben
+    Indikatoren wie im Screener. Kontaktiert wird die TWS nicht -- die Bars
+    kommen aus ``StoredBarSource``, und ein Webdienst, der dafuer eine
+    TWS-Client-ID belegte, waere gefaehrlicher als kein Chart (ADR 0052).
+
+    Gebaut wird erst beim ersten Aufruf: ``build_watchlist`` liest die
+    Watchlist-Dateien und wirft ohne sie. Beim Start gebaut, koennte ein
+    fehlendes Verzeichnis den ganzen Dienst am Hochfahren hindern -- den
+    Chart zu verlieren ist genug.
+    """
+    aus_dem_bestand = config.model_copy(
+        update={
+            "market_data": config.market_data.model_copy(
+                update={"provider": "ibkr", "source": "stored"}
+            )
+        }
+    )
+
+    @cache
+    def chart_market_data() -> MarketDataProvider:
+        return build_market_data_provider(
+            aus_dem_bestand, indicators, root, uow_factory=uow_factory
+        )
+
+    return chart_market_data
+
+
 def build_market_data_provider(
     config: AppConfig,
     indicators: IndicatorConfig,
@@ -718,21 +766,11 @@ def build_dashboard_publisher(
     )
 
     indicators = config.require_indicators()
-    nur_bestand = config.model_copy(
-        update={"market_data": config.market_data.model_copy(update={"source": "stored"})}
-    )
-
-    @cache
-    def chart_market_data() -> MarketDataProvider:
-        return build_market_data_provider(
-            nur_bestand, indicators, root, uow_factory=uow_factory
-        )
-
     quellen = Exportquellen(
         uow_factory=uow_factory,
         backtest_parameters=build_backtest_params(config),
         candidate_rule_parameters=build_candidate_rule_params(indicators, config),
-        chart_market_data=chart_market_data,
+        chart_market_data=build_chart_market_data(config, indicators, root, uow_factory),
     )
 
     def dateien() -> Iterator[tuple[str, bytes]]:
@@ -809,30 +847,9 @@ def build_app() -> FastAPI:
     app.state.candidate_rule_parameters = build_candidate_rule_params(
         indicators, loaded.config
     )
-    # **Fest auf den Bestand, und erst auf Zuruf.** Der Chart braucht Kerzen,
-    # und die liegen in der Datenbank; ein Webdienst, der dafuer die
-    # TWS-Client-ID belegte, waere gefaehrlicher als kein Chart (ADR 0052).
-    # Der Anbieter bleibt ``ibkr``, damit die Kerzenbildung dieselbe ist --
-    # nur die Quelle nicht.
-    #
-    # Gebaut wird er beim ersten Aufruf: ``build_watchlist`` liest die
-    # Watchlist-Dateien und wirft ohne sie. Beim Start gebaut, koennte ein
-    # fehlendes Verzeichnis den ganzen Dienst am Hochfahren hindern -- den
-    # Chart zu verlieren ist genug.
-    nur_bestand = loaded.config.model_copy(
-        update={"market_data": loaded.config.market_data.model_copy(update={"source": "stored"})}
+    app.state.chart_market_data = build_chart_market_data(
+        loaded.config, indicators, project_root(loaded.source_path), uow_factory
     )
-
-    @cache
-    def chart_market_data() -> MarketDataProvider:
-        return build_market_data_provider(
-            nur_bestand,
-            indicators,
-            project_root(loaded.source_path),
-            uow_factory=uow_factory,
-        )
-
-    app.state.chart_market_data = chart_market_data
     return app
 
 
