@@ -809,7 +809,7 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 
 | # | Frage | Warum sie zählt |
 |---|---|---|
-| O1 | **Finnhub L8, ADR 0022, IBKR-Bedingungen:** Ist ein Hosting-Anbieter, der Klartext speichert, ein „Dritter"? Und ist ein Anbieter, der nur Chiffrat speichert, keiner? | Stufe 1 gegen Stufe 2; nur der Inhaber kann das beschließen |
+| O1 | ~~**Finnhub L8, ADR 0022, IBKR-Bedingungen:** Ist ein Hosting-Anbieter, der Klartext speichert, ein „Dritter"? Und ist ein Anbieter, der nur Chiffrat speichert, keiner?~~ **Beschieden am 2026-09-09** — siehe 10.4 | Stufe 1 gegen Stufe 2; nur der Inhaber kann das beschließen |
 | O2 | Welche Nutzungsbedingungen hat die kostenlose Stufe des gewählten Anbieters (private Nutzung, Datenverarbeitung, Kündigung, Speicherort)? Lassen sich alte Deployments löschen, oder behält der Anbieter jede Fassung unter eigener Adresse (T20)? Liegt die Zugriffsregel außerhalb des Deployments (N19)? Gibt es Deploy-Rechte je Projekt (AK9)? | 11.1, 8.3, 8.4 |
 | O3 | Gibt es ein Konto bei einem Identitätsanbieter mit Authenticator-App oder Passkey, das der Inhaber für die Kantenanmeldung nutzen will? | 8.3, T2 |
 | O4 | Steht Node auf dem Server (A4)? Ist ein Anbieter-Werkzeug als Unterprozess akzeptabel (D3)? | DW1 gegen DW2 |
@@ -870,6 +870,36 @@ schärfer zu benennenden Restrisiken stehen im Nachtrag vom 2026-09-08 zu
 [ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md).
 
 ---
+
+### 10.4 Stand der Entscheidungen am 2026-09-09
+
+**O1 ist beschieden.** Der Inhaber liest die Lizenzlage so: Die Daten
+werden **nicht an Dritte weitergegeben**, und sie liegen **nirgends
+unverschlüsselt** außerhalb des Servers. Ein Anbieter, der ausschließlich
+Chiffrat speichert und den Schlüssel nie sieht, ist damit kein Empfänger
+der Daten im Sinne von Finnhubs L8 — er transportiert und lagert eine
+Bytefolge, die er nicht lesen kann.
+
+**Was daraus folgt, und was ausdrücklich nicht:** Die Lesart trägt
+**Stufe 2** und nur diese. Sie trägt **nicht** Stufe 1, in der der
+Anbieter Klartext sieht — dort wäre er sehr wohl ein Dritter mit Zugriff
+auf die Daten. Stufe 1 ist damit als eigenständiger Betriebszustand
+erledigt und kommt auch nicht als Zwischenschritt in Betracht; das deckt
+sich mit **E1** vom 2026-09-07 („Stufe 2 unmittelbar"), verschärft es aber:
+Aus einer Reihenfolgeentscheidung wird eine Bedingung.
+
+Für die Umsetzung heißt das: `dashboard_export.encrypt` ist nicht nur
+ausgeliefert `true`, es darf nie `false` werden, solange Finnhub-abgeleitete
+Inhalte im Baum stehen. Der Bootstrap bricht ohne Passphrase ab, und einen
+Kommandozeilenschalter für Klartext gibt es bewusst nicht (8.8) — beides
+ist ab jetzt nicht mehr nur Vorsicht, sondern die technische Absicherung
+dieser Entscheidung.
+
+**Der Export bleibt bis auf Weiteres Handarbeit.** Der Inhaber hat
+entschieden, ihn erst in den Tageslauf zu nehmen, wenn der Baum auch
+irgendwohin führt — also nach der Anbieterwahl und dem Upload. Bis dahin
+kostete er eine Viertelstunde je Lauf für ein Verzeichnis, das niemand
+liest. Doc 14, Stufe K, Schritt 5 bleibt beschrieben und ungeschaltet.
 
 ## 11. Proof-of-Concept-Plan
 
