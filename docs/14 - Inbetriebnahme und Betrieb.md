@@ -1189,6 +1189,59 @@ Zustandsvermerk (`var\dashboard.zustand.json`) liegt **außerhalb** des
 Verzeichnisses, das später hochgeladen würde — er enthält die Zuordnung von
 Pfad zu Dateiname.
 
+## Schritt 4b — Einmal wirklich hineinsehen
+
+Alles bis hier beweist, dass der Baum vollständig und undurchsichtig ist. Es
+beweist **nicht**, dass ihn jemand benutzen kann. Dieser Schritt ist der
+einzige, der die beiden Hälften außerhalb der Tests zusammenbringt.
+
+Der Datenbaum liegt bereits neben der Oberfläche aus Schritt 2, beides unter
+`var\dashboard`. Es fehlt nur ein Webserver davor — die Seite lädt ihre
+Dateien per `fetch`, und das geht über `file://` nicht.
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer\var\dashboard
+..\..\backend\.venv\Scripts\python.exe -m http.server 8099 --bind 127.0.0.1
+```
+
+**`--bind 127.0.0.1` ist nicht optional.** Ohne die Angabe lauscht der
+Server auf allen Schnittstellen, die Windows-Firewall fragt nach, und aus
+einer Abnahme wird eine Netzwerkänderung. So bleibt es beim eigenen Rechner:
+keine Regel, kein offener Port nach außen, Stufe J unberührt.
+
+Dann im Browser des Servers **`http://localhost:8099/`** öffnen. Die Adresse
+ist ebenfalls nicht beliebig: `crypto.subtle` — die Entschlüsselung im
+Browser — steht nur in einem *sicheren Kontext* zur Verfügung. `localhost`
+und `127.0.0.1` gelten als sicher, die LAN-Adresse des Servers **nicht**.
+Über `http://192.168.x.x:8099` erschiene das Passphrase-Feld und die
+Entschlüsselung scheiterte an einer Stelle, die nichts mit dem Datenbaum zu
+tun hat.
+
+Am Ende `Strg+C`. Der Webserver ist für diesen Blick da und für nichts sonst.
+
+**Was zu prüfen ist:**
+
+| # | Prüfung | Erwartung |
+|---|---|---|
+| 1 | Die Seite fragt nach einer Passphrase | Nur der Zero-Knowledge-Build tut das. Erscheint stattdessen sofort ein Dashboard, liegt der LAN-Build im Verzeichnis — Schritt 2 wiederholen |
+| 2 | Eine **falsche** Passphrase eingeben | Verständliche Fehlermeldung, kein Absturz, keine leere Seite. Danach lässt sich die richtige eingeben |
+| 3 | Die richtige Passphrase, mit Blick auf die Uhr | Der Stand öffnet sich. Die Dauer ist die Schlüsselableitung — Bezugswert für AK16 |
+| 4 | Die Kopfzeile „Stand" | Nennt Datum des Laufs und Zeitpunkt des Exports. Zeigt sie einen älteren Lauf als erwartet, hat der Export einen alten Stand erwischt |
+| 5 | Die Liste „ohne Chart" in derselben Zeile | Sollte leer oder kurz sein. Stehen dort alle Aktien, kommen die Kerzen nicht aus dem Bestand (siehe Schritt 3) |
+| 6 | Eine Aktie mit Chart öffnen | Kerzen, EMA und RSI werden gezeichnet. **Einen Schlusskurs gegen die Datenbank gegenprüfen** — das ist die einzige Prüfung, die echte von plausiblen Zahlen unterscheidet |
+| 7 | Berichte und Backtests aufrufen | Dieselben Zahlen wie im LAN-Dashboard bzw. in der API |
+| 8 | Einen **neuen Tab** auf dieselbe Adresse öffnen | Fragt erneut nach der Passphrase. Sie wird bewusst nirgends abgelegt |
+| 9 | Entwicklerwerkzeuge, Reiter „Netzwerk", Seite neu laden | Die angeforderten Dateinamen sind Hexfolgen ohne Bezug zum Symbol, die Antworten sind Binärdaten. Kein einziger lesbarer JSON-Körper außer `manifest.head.json` |
+| 10 | Reiter „Konsole" | Keine Fehler |
+
+**Abnahmekriterium dieser Stufe:** Prüfung 6 und Prüfung 9 zusammen. Die
+erste zeigt, dass echte Daten ankommen; die zweite, dass unterwegs nichts
+davon lesbar war.
+
+Was hier **nicht** geprüft werden kann, ist AK16: die Dauer auf dem
+Smartphone. Dazu müsste der Baum erreichbar sein, und das ist er erst mit
+einem Anbieter.
+
 ## Schritt 5 — Im Tageslauf einschalten (erst nach Schritt 4)
 
 In `config/default.yaml` unter `dashboard_export` das Ziel eintragen
