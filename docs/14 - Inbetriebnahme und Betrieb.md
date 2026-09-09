@@ -1162,11 +1162,25 @@ Get-Content var\dashboard\data\manifest.head.json
 Select-String -Path var\dashboard\data\* -Pattern "AAPL" -List
 ```
 
-**Rechnen Sie mit gut einer Minute.** Der Export baut je Aktie den
-Validierungschart neu — dieselbe Indikatorrechnung wie im Screener, rund
-2.500 Kerzen —, und das ist der Löwenanteil der Laufzeit. Verschlüsseln und
-Schreiben fallen daneben kaum ins Gewicht. Gemessen auf dem
-Entwicklungsrechner: rund 0,4 Sekunden je Aktie.
+**Rechnen Sie mit einer knappen Viertelstunde.** Auf dem Server gemessen
+(2026-09-09, 190 Aktien): **784 Sekunden**, rund 4 Sekunden je Aktie, 685
+Dateien, 29 MB.
+
+Der Löwenanteil ist der Validierungschart: Der Export baut ihn je Aktie neu
+— dieselbe Indikatorrechnung wie im Screener, dazu die Kandidatenprüfung an
+jedem Entscheidungspunkt — und zwar über die **gesamte** Historie im
+Bestand. `market_data.history_duration` (1 Y) begrenzt nur den regelmäßigen
+Lückenschluss; der einmalige Tiefen-Backfill (ADR 0028) hat den Bestand bis
+2021 gefüllt, also rund 30.000 Kerzen je Aktie statt der 2.500, mit denen
+auf dem Entwicklungsrechner gemessen wurde. Verschlüsseln und Schreiben
+fallen daneben kaum ins Gewicht.
+
+**Der zweite Aufruf ist genauso teuer.** „Nur Änderungen" bezieht sich auf
+das Schreiben, nicht auf das Rechnen: Ob ein Chart sich geändert hat, weiß
+der Export erst, wenn er ihn gebaut und seine Prüfsumme gebildet hat. Das
+Inkrementelle spart Schreibvorgänge und später Übertragung — keine
+Rechenzeit. Für den Tageslauf heißt das: gut eine Viertelstunde am Ende
+jedes Laufs, jeden Tag.
 
 **Abnahmekriterien dieser Stufe:** Die letzte Suche findet nichts. Der Kopf
 nennt `PBKDF2-HMAC-SHA256`, `AES-256-GCM` und mindestens 600.000 Runden. Der
