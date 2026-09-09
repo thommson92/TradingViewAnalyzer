@@ -1058,9 +1058,23 @@ aus dem Passwortmanager:
 # 32 Bytes aus dem kryptographischen Zufallsgenerator, als Base64.
 # Das Ergebnis in den Passwortmanager, und nur dorthin.
 $bytes = [byte[]]::new(32)
-[System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+if (-not ($bytes | Where-Object { $_ -ne 0 })) {
+    throw "Der Zufallsgenerator hat nichts geliefert -- nichts uebernehmen."
+}
 [Convert]::ToBase64String($bytes)
 ```
+
+**Nicht `RandomNumberGenerator::Fill`.** Die statische Methode gibt es erst ab
+.NET Core 2.1; Windows PowerShell 5.1 laeuft auf dem .NET Framework und kennt
+sie nicht. Der Aufruf scheitert dort, laesst das Byte-Array unberuehrt --
+und die naechste Zeile kodiert dann pflichtschuldig 32 Nullbytes zu einer
+Zeichenfolge, die wie eine Passphrase aussieht (`AAAA...=`). Genau deshalb
+steht die Pruefung darueber im Block: Ein Fehlschlag soll abbrechen und nicht
+etwas Brauchbares vortaeuschen. `Create()` und `GetBytes()` gibt es in beiden
+Welten.
 
 **Nicht `Get-Random`.** Der zieht aus `System.Random` — einem Generator für
 Simulationen, nicht für Geheimnisse. Für eine Passphrase, die das einzige
