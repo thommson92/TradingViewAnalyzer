@@ -5,14 +5,21 @@ bewusst ausserhalb der vier Schichten, siehe Doc 10 Paragraph 9)."""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 
 from ai_trading_analyst.application.read_run_overview import ReadRunOverviewUseCase
-from ai_trading_analyst.domain.analysis import MarketDataProvider, UnitOfWork
+from ai_trading_analyst.domain.analysis import (
+    MarketDataProvider,
+    MarketDataUnavailableError,
+    UnitOfWork,
+)
 from ai_trading_analyst.domain.backtesting import BacktestParameters
 from ai_trading_analyst.domain.screening import CandidateRuleParameters
+
+_logger = logging.getLogger(__name__)
 
 
 def get_run_overview_use_case(request: Request) -> ReadRunOverviewUseCase:
@@ -52,6 +59,19 @@ def get_chart_market_data(request: Request) -> MarketDataProvider:
     ``app.state`` haelt eine **Fabrik**, keinen fertigen Anbieter: Er haengt
     an der Watchlist-Datei, und ein fehlendes Verzeichnis soll den Chart
     kosten und nicht den Start des Dienstes.
+
+    Damit es wirklich nur den Chart kostet, wird der Ausfall hier abgefangen.
+    Ungefangen waere er ein ``500`` aus einer Abhaengigkeit heraus -- also
+    ein Fehler des Dienstes, obwohl der Dienst in Ordnung ist und nur eine
+    Datei fehlt.
     """
     fabrik: Callable[[], MarketDataProvider] = request.app.state.chart_market_data
-    return fabrik()
+    try:
+        return fabrik()
+    except MarketDataUnavailableError as fehler:
+        # Der Wortlaut bleibt drinnen: Er nennt Pfade auf dem Server.
+        _logger.error("Chartanbieter nicht einsatzbereit: %s", fehler)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Der Kursbestand ist gerade nicht lesbar.",
+        ) from fehler

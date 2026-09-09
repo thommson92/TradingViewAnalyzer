@@ -35,6 +35,7 @@ from ai_trading_analyst.domain.analysis import (
     FundamentalDataProvider,
     HistoricalBarSource,
     MarketDataProvider,
+    MarketDataUnavailableError,
     OptionsDataProvider,
     RepeatSuppressionParameters,
     ResearchProvider,
@@ -119,7 +120,10 @@ from ai_trading_analyst.infrastructure.publishing import (
     SnapshotPublisher,
 )
 from ai_trading_analyst.infrastructure.throttle import Drossel
-from ai_trading_analyst.infrastructure.watchlists import load_watchlist_directory
+from ai_trading_analyst.infrastructure.watchlists import (
+    WatchlistError,
+    load_watchlist_directory,
+)
 from ai_trading_analyst.presentation.api.app import create_app
 from ai_trading_analyst.presentation.export import Exportquellen, iter_snapshot
 
@@ -210,37 +214,55 @@ def build_chart_market_data(
     der Snapshot-Export (Stufe K). Beide zeigen Kerzen an, die schon
     gerechnet wurden; keiner von beiden darf welche beschaffen.
 
-    **Der Anbieter wird hier gesetzt und nicht uebernommen.** Die
-    Konfiguration steht auf dem Server bewusst auf ``fixture``, damit
-    ``git pull`` keinen lokalen Diff vorfindet; eingeschaltet wird ``ibkr``
-    je Lauf ueber die Kommandozeile. Wer diesen Wert hier erbte, baute den
-    Chart aus **Fixture-Daten** -- erfundenen Kursen, die neben echten
+    **``market_data.provider`` wird hier bewusst nicht gelesen.** Der Wert
+    steht auf dem Server auf ``fixture``, damit ``git pull`` keinen lokalen
+    Diff vorfindet; die produktive Quelle wird je Lauf ueber die
+    Kommandozeile geschaltet. Wer ihn hier erbte, baute den Chart aus
+    **Fixture-Daten** -- erfundenen Kursen, die neben echten
     Analyseergebnissen stuenden und nicht als erfunden zu erkennen waeren.
     Genau das verbietet Doc 12 ("Keine erfundenen Werte"), und es ist beim
     ersten Export auf dem Server auch tatsaechlich passiert.
 
-    ``ibkr`` heisst hier nur: dieselbe Kerzenbildung und dieselben
-    Indikatoren wie im Screener. Kontaktiert wird die TWS nicht -- die Bars
-    kommen aus ``StoredBarSource``, und ein Webdienst, der dafuer eine
-    TWS-Client-ID belegte, waere gefaehrlicher als kein Chart (ADR 0052).
+    Der ``IbkrMarketDataProvider`` steht hier nur fuer die Kerzenbildung und
+    die Indikatoren -- dieselben wie im Screener. Kontaktiert wird die TWS
+    nicht: Die Bars kommen aus ``StoredBarSource``, und ein Webdienst, der
+    dafuer eine TWS-Client-ID belegte, waere gefaehrlicher als kein Chart
+    (ADR 0052).
+
+    **Die Watchlist bleibt Voraussetzung.** Sie liefert die Kontrakte; eine
+    Aktie, die nicht darauf steht, bekommt keinen Chart, auch wenn Bars zu
+    ihr im Bestand liegen. Fehlt das Verzeichnis ganz, wirft
+    ``build_watchlist`` -- siehe die Aufrufer, was sie damit tun.
 
     Gebaut wird erst beim ersten Aufruf: ``build_watchlist`` liest die
     Watchlist-Dateien und wirft ohne sie. Beim Start gebaut, koennte ein
     fehlendes Verzeichnis den ganzen Dienst am Hochfahren hindern -- den
     Chart zu verlieren ist genug.
     """
-    aus_dem_bestand = config.model_copy(
-        update={
-            "market_data": config.market_data.model_copy(
-                update={"provider": "ibkr", "source": "stored"}
-            )
-        }
-    )
-
+    # Direkt gebaut und nicht ueber ``build_market_data_provider``: Der
+    # Umweg brauchte eine umgeschriebene Konfiguration, in der ``"ibkr"``
+    # dann "nicht Fixture" bedeutete -- ein Zauberwort an einer Stelle, die
+    # ein spaeterer zweiter Anbieter stillschweigend uebergehen wuerde.
     @cache
     def chart_market_data() -> MarketDataProvider:
-        return build_market_data_provider(
-            aus_dem_bestand, indicators, root, uow_factory=uow_factory
+        try:
+            watchlist = build_watchlist(config, root)
+        except WatchlistError as fehler:
+            # Uebersetzt, weil die Praesentationsschicht ``WatchlistError``
+            # nicht kennen darf (Doc 10, Paragraph 9) -- und weil die
+            # Einordnung stimmt: Eine fehlende Watchlist ist ein
+            # Betriebsproblem, keine Auskunft ueber die Datenlage. Der
+            # Endpunkt meldet daraufhin 503 statt 500, und der Tageslauf
+            # isoliert es ohnehin.
+            raise MarketDataUnavailableError(
+                f"Die Watchlist ist nicht lesbar, deshalb gibt es keinen Chart: {fehler}"
+            ) from fehler
+        return IbkrMarketDataProvider(
+            bar_source=StoredBarSource(uow_factory),
+            watchlist=watchlist,
+            session_parameters=build_session_parameters(config),
+            indicator_parameters=build_indicator_parameters(indicators),
+            native_bar_minutes=config.market_data.ibkr.native_bar_minutes,
         )
 
     return chart_market_data

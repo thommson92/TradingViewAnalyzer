@@ -243,76 +243,22 @@ def iter_snapshot(
         hashes[pfad] = hashlib.sha256(inhalt).hexdigest()
         return Exportdatei(pfad, inhalt)
 
+    # **Die Charts kommen zuerst, und das ist kein Geschmack.** Der Schreiber
+    # verbraucht diesen Generator traege: Jede Datei, die hier vor einem
+    # Abbruch herausgereicht wurde, steht draussen bereits geschrieben --
+    # neben dem *alten* Manifest, dessen Pruefsummen dann nicht mehr passen.
+    # Der Browser wiese sie zurueck, und das Dashboard waere unbrauchbar
+    # statt nur veraltet. Faellt der Waechter unten, ist deshalb noch keine
+    # einzige Datei geflossen.
+    #
+    # Die eigene, kurze Transaktion dafuer: Die Charts selbst laufen
+    # ausserhalb einer Unit of Work -- der Anbieter liest den Bestand selbst,
+    # und eine Transaktion ueber zweihundert Kursreihen und eine
+    # Viertelstunde offen zu halten waere eine lange Sperre ohne Gegenwert.
     with quellen.uow_factory() as uow:
-        laeufe = _alle_laeufe(uow)
-        yield datei(
-            "data/analysis-runs.json",
-            _als_json([lauf.model_dump(mode="json") for lauf in laeufe]),
-        )
-
-        uebersicht = ReadRunOverviewUseCase(quellen.uow_factory)
-        for lauf in laeufe:
-            lauf_id = lauf.id
-            detail = uebersicht.execute(lauf_id)
-            if detail is not None:
-                yield datei(
-                    f"data/analysis-runs/{lauf_id}.json",
-                    _modell(AnalysisRunDetailResponse.from_overview(detail)),
-                )
-            kurzliste = views.reports_of_run(uow, lauf_id)
-            yield datei(
-                f"data/analysis-runs/{lauf_id}/reports.json",
-                _als_json([eintrag.model_dump(mode="json") for eintrag in kurzliste]),
-            )
-            for eintrag in kurzliste:
-                bericht = uow.stock_reports.get(eintrag.report_id)
-                if bericht is None:
-                    continue
-                berichte_gesamt += 1
-                # Das gespeicherte Dokument, unveraendert (ADR 0039).
-                yield datei(
-                    f"data/reports/{bericht.id}.json", _als_json(dict(bericht.document))
-                )
-
         aktien = sorted(uow.stocks.list_all(), key=lambda stock: stock.symbol)
-        symbole = [stock.symbol for stock in aktien]
-        namen = _symbolnamen(symbole)
-
-        messungen = views.measurements(uow)
-        yield datei(
-            "data/options-backtests.json",
-            _als_json([messung.model_dump(mode="json") for messung in messungen]),
-        )
-        for messung in messungen:
-            messung_id = messung.measurement_id
-            yield datei(
-                f"data/options-backtests/{messung_id}.json",
-                _modell(
-                    views.measurement_detail(
-                        uow, messung_id, backtest_params=quellen.backtest_parameters
-                    )
-                ),
-            )
-
-        for symbol in symbole:
-            name = namen[symbol]
-            yield datei(
-                f"data/stocks/{name}/reports.json",
-                _als_json(
-                    [eintrag.model_dump(mode="json") for eintrag in _alle_berichte(uow, symbol)]
-                ),
-            )
-            yield datei(
-                f"data/stocks/{name}/backtest.json",
-                _modell(
-                    views.stock_backtest(
-                        uow,
-                        symbol,
-                        measurement_id=None,
-                        backtest_params=quellen.backtest_parameters,
-                    )
-                ),
-            )
+    symbole = [stock.symbol for stock in aktien]
+    namen = _symbolnamen(symbole)
 
     # Die Charts ausserhalb der Unit of Work: Der Anbieter liest den Bestand
     # selbst, und eine Transaktion ueber zweihundert Kursreihen offen zu
@@ -360,12 +306,87 @@ def iter_snapshot(
         # darueber verhindert -- nur auf dem anderen Weg dorthin: ein
         # vollstaendiges Manifest ohne einen einzigen Chart, worauf der
         # Schreiber alle frueher exportierten Charts als verwaist entfernt.
+        #
+        # **Die Entscheidung dahinter heisst: lieber gar nichts als etwas
+        # ohne Charts.** Es geht dann auch nichts hinaus, was fuer sich
+        # tadellos waere -- Laeufe, Berichte, Backtests. Das ist gewollt: Ein
+        # Dashboard, dem jede Kursreihe fehlt, ist kein magerer Stand,
+        # sondern ein irrefuehrender.
         raise DashboardPublisherError(
             f"Keine einzige der {len(aktien)} Aktien hat eine Kerzenreihe geliefert. "
             "Der Export bricht ab, statt einen Stand ohne Charts zu schreiben. "
-            "Zu pruefen: ist der Bestand gefuellt (Backfill), und liest der Export "
-            "ihn auch -- der Fixture-Anbieter kennt die Symbole der Watchlist nicht."
+            "Zu pruefen: ist der Bestand gefuellt (Backfill), und passt die "
+            "Watchlist zu den Aktien in der Datenbank -- die Kerzen kommen aus "
+            "dem Bestand, die Kontrakte aber aus der Watchlist. Danach "
+            "'publish --full'."
         )
+
+    with quellen.uow_factory() as uow:
+        laeufe = _alle_laeufe(uow)
+        yield datei(
+            "data/analysis-runs.json",
+            _als_json([lauf.model_dump(mode="json") for lauf in laeufe]),
+        )
+
+        uebersicht = ReadRunOverviewUseCase(quellen.uow_factory)
+        for lauf in laeufe:
+            lauf_id = lauf.id
+            detail = uebersicht.execute(lauf_id)
+            if detail is not None:
+                yield datei(
+                    f"data/analysis-runs/{lauf_id}.json",
+                    _modell(AnalysisRunDetailResponse.from_overview(detail)),
+                )
+            kurzliste = views.reports_of_run(uow, lauf_id)
+            yield datei(
+                f"data/analysis-runs/{lauf_id}/reports.json",
+                _als_json([eintrag.model_dump(mode="json") for eintrag in kurzliste]),
+            )
+            for eintrag in kurzliste:
+                bericht = uow.stock_reports.get(eintrag.report_id)
+                if bericht is None:
+                    continue
+                berichte_gesamt += 1
+                # Das gespeicherte Dokument, unveraendert (ADR 0039).
+                yield datei(
+                    f"data/reports/{bericht.id}.json", _als_json(dict(bericht.document))
+                )
+
+        messungen = views.measurements(uow)
+        yield datei(
+            "data/options-backtests.json",
+            _als_json([messung.model_dump(mode="json") for messung in messungen]),
+        )
+        for messung in messungen:
+            messung_id = messung.measurement_id
+            yield datei(
+                f"data/options-backtests/{messung_id}.json",
+                _modell(
+                    views.measurement_detail(
+                        uow, messung_id, backtest_params=quellen.backtest_parameters
+                    )
+                ),
+            )
+
+        for symbol in symbole:
+            name = namen[symbol]
+            yield datei(
+                f"data/stocks/{name}/reports.json",
+                _als_json(
+                    [eintrag.model_dump(mode="json") for eintrag in _alle_berichte(uow, symbol)]
+                ),
+            )
+            yield datei(
+                f"data/stocks/{name}/backtest.json",
+                _modell(
+                    views.stock_backtest(
+                        uow,
+                        symbol,
+                        measurement_id=None,
+                        backtest_params=quellen.backtest_parameters,
+                    )
+                ),
+            )
 
     yield Exportdatei(
         MANIFEST_PFAD,

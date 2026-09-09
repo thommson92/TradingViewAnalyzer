@@ -276,8 +276,17 @@ class TestFehlendeCharts:
         Schreiber jede frueher exportierte Chartdatei als verwaist.
         """
         quellen, _ = quellen_mit(ohne_chart=frozenset({"AAPL", "MSFT"}))
+        geflossen = []
         with pytest.raises(DashboardPublisherError, match="Keine einzige"):
-            baum(quellen)
+            for datei in iter_snapshot(quellen):
+                geflossen.append(datei.pfad)
+
+        # **Der eigentliche Punkt, und er haengt an der Reihenfolge.** Der
+        # Schreiber verbraucht den Generator traege; jede Datei, die vor dem
+        # Abbruch herauskaeme, staende draussen schon geschrieben -- neben
+        # dem alten Manifest, dessen Pruefsummen dann nicht mehr passen. Der
+        # Browser wiese sie zurueck. Es darf deshalb keine geben.
+        assert geflossen == []
 
     def test_ohne_aktien_ist_ein_baum_ohne_charts_in_ordnung(self) -> None:
         """Ein frisch aufgesetzter Server hat noch keine Aktien.

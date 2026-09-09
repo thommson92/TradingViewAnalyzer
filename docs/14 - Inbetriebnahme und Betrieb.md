@@ -1169,11 +1169,18 @@ Dateien, 29 MB.
 Der Löwenanteil ist der Validierungschart: Der Export baut ihn je Aktie neu
 — dieselbe Indikatorrechnung wie im Screener, dazu die Kandidatenprüfung an
 jedem Entscheidungspunkt — und zwar über die **gesamte** Historie im
-Bestand. `market_data.history_duration` (1 Y) begrenzt nur den regelmäßigen
-Lückenschluss; der einmalige Tiefen-Backfill (ADR 0028) hat den Bestand bis
-2021 gefüllt, also rund 30.000 Kerzen je Aktie statt der 2.500, mit denen
-auf dem Entwicklungsrechner gemessen wurde. Verschlüsseln und Schreiben
-fallen daneben kaum ins Gewicht.
+Bestand. `market_data.ibkr.history_duration` (1 Y) begrenzt nur den
+regelmäßigen Lückenschluss; der einmalige Tiefen-Backfill (ADR 0028) hat den
+Bestand bis 2021 gefüllt.
+
+**Nicht die Kerzen sind der Kostentreiber, sondern die Bars darunter.** Bei
+`timeframe_minutes: 195` und einer 390-Minuten-Sitzung entstehen zwei Kerzen
+je Handelstag — fünf Jahre sind rund 2.500 Kerzen, also genau so viele wie
+auf dem Entwicklungsrechner. Gelesen werden dafür aber rund **33.000 native
+15-Minuten-Bars je Aktie** aus PostgreSQL (ADR 0028), die erst zu diesen
+Kerzen aggregiert werden. Das ist der Unterschied zwischen 0,4 und 4
+Sekunden, nicht eine tiefere Historie. Verschlüsseln und Schreiben fallen
+daneben kaum ins Gewicht.
 
 **Der zweite Aufruf ist genauso teuer.** „Nur Änderungen" bezieht sich auf
 das Schreiben, nicht auf das Rechnen: Ob ein Chart sich geändert hat, weiß

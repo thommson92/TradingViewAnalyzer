@@ -20,7 +20,12 @@ from pathlib import Path
 
 import pytest
 
-from ai_trading_analyst.bootstrap import build_dashboard_publisher, project_root
+from ai_trading_analyst import bootstrap
+from ai_trading_analyst.bootstrap import (
+    build_chart_market_data,
+    build_dashboard_publisher,
+    project_root,
+)
 from ai_trading_analyst.config.loader import load_config
 from ai_trading_analyst.config.settings import (
     AppConfig,
@@ -28,7 +33,9 @@ from ai_trading_analyst.config.settings import (
     MissingSecretError,
     Secrets,
 )
-from ai_trading_analyst.domain.analysis import UnitOfWork
+from ai_trading_analyst.domain.analysis import MarketDataUnavailableError, UnitOfWork
+from ai_trading_analyst.infrastructure.ibkr import IbkrMarketDataProvider
+from ai_trading_analyst.infrastructure.persistence.stored_bar_source import StoredBarSource
 from ai_trading_analyst.infrastructure.publishing import MINDEST_ITERATIONEN
 
 
@@ -181,15 +188,15 @@ class TestChartquelle:
 
     Beim ersten Export auf dem Server ist genau das passiert. Die Symbole der
     Watchlist stehen zufaellig in keiner Fixture, deshalb blieb der Baum
-    chartlos statt falsch. Dieser Test haelt die Lehre daraus fest.
+    chartlos statt falsch.
+
+    **Zwei Ebenen, und die zweite ist die wichtigere.** Der Fehler sass nicht
+    in ``build_chart_market_data`` -- die Funktion gab es nicht --, sondern
+    an den beiden Aufrufstellen. Ein Test, der nur die Funktion prueft,
+    bliebe gruen, wenn dort wieder die geerbte Konfiguration einzoege.
     """
 
     def test_der_fixture_anbieter_wird_nicht_uebernommen(self) -> None:
-        from ai_trading_analyst.bootstrap import build_chart_market_data
-        from ai_trading_analyst.infrastructure.fixtures.market_data_provider import (
-            FixtureMarketDataProvider,
-        )
-
         geladen = load_config()
         basis = geladen.config
         assert basis.market_data.provider == "fixture", (
@@ -199,16 +206,10 @@ class TestChartquelle:
         quelle = build_chart_market_data(
             basis, basis.require_indicators(), project_root(geladen.source_path), uow_factory()
         )
-        assert not isinstance(quelle(), FixtureMarketDataProvider)
+        assert isinstance(quelle(), IbkrMarketDataProvider)
 
     def test_die_kerzen_kommen_aus_dem_bestand_und_nicht_von_der_tws(self) -> None:
         """Kein Chart darf eine TWS-Verbindung aufbauen (ADR 0052)."""
-        from ai_trading_analyst.bootstrap import build_chart_market_data
-        from ai_trading_analyst.infrastructure.ibkr import IbkrMarketDataProvider
-        from ai_trading_analyst.infrastructure.persistence.stored_bar_source import (
-            StoredBarSource,
-        )
-
         geladen = load_config()
         auf_live = geladen.config.model_copy(
             update={
@@ -224,3 +225,46 @@ class TestChartquelle:
         anbieter = quelle()
         assert isinstance(anbieter, IbkrMarketDataProvider)
         assert isinstance(anbieter._bar_source, StoredBarSource)
+
+    def test_eine_fehlende_watchlist_kostet_den_chart_und_nicht_den_dienst(
+        self, tmp_path: Path
+    ) -> None:
+        """Sie wird zum Ausfall uebersetzt, damit der Endpunkt 503 sagen kann.
+
+        Ungefangen waere ``WatchlistError`` ein ``500`` aus einer
+        FastAPI-Abhaengigkeit heraus -- ein Fehler des Dienstes, obwohl der
+        Dienst in Ordnung ist und nur eine Datei fehlt.
+        """
+        geladen = load_config()
+        quelle = build_chart_market_data(
+            geladen.config, geladen.config.require_indicators(), tmp_path, uow_factory()
+        )
+        with pytest.raises(MarketDataUnavailableError, match="Watchlist"):
+            quelle()
+
+
+class TestDieAufrufstellenBenutzenSie:
+    """Der Regressionsschutz fuer den Fehler, der tatsaechlich auftrat.
+
+    Beide Aufrufstellen muessen ueber ``build_chart_market_data`` gehen und
+    ihm die **unveraenderte** Konfiguration reichen. Wer dort wieder selbst
+    eine Konfiguration umschreibt, faellt hier auf.
+    """
+
+    def test_der_export_baut_die_chartquelle_ueber_die_gemeinsame_funktion(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        gesehen: list[AppConfig] = []
+
+        def spion(
+            config: AppConfig, indicators: object, root: Path, uow: object
+        ) -> Callable[[], object]:
+            gesehen.append(config)
+            return lambda: object()
+
+        monkeypatch.setattr(bootstrap, "build_chart_market_data", spion)
+        config = konfiguration(target="directory", directory="var/dashboard")
+        baue(config, Secrets(dashboard_export_passphrase="x" * 40), tmp_path)
+
+        assert len(gesehen) == 1
+        assert gesehen[0].market_data == config.market_data
