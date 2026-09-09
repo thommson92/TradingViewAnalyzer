@@ -1033,6 +1033,22 @@ Ergebnisse gehen zum Nutzer. Der Server schreibt nach jedem Lauf einen
 Datenbaum aus denselben lesenden Endpunkten, die auch das LAN-Dashboard
 nutzt, und verschlüsselt ihn. Entschlüsselt wird erst im Browser.
 
+## Schritt 0 — Den Stand einspielen
+
+Diese Stufe bringt eine neue Abhängigkeit mit: `cryptography`, für
+AES-256-GCM. Fehlt sie, bricht der Exportbefehl schon beim Import ab. Der Weg
+ist der gewöhnliche aus „Aktualisierung" weiter unten:
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer\backend
+git pull
+.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-dev.lock.txt
+.venv\Scripts\python.exe -m pip install --no-deps -e .
+```
+
+Eine Datenbankmigration gehört **nicht** dazu. Der Export liest ausschließlich;
+er legt kein Schema an und schreibt keine Zeile.
+
 ## Schritt 1 — Passphrase erzeugen und ablegen
 
 Lang und zufällig, nicht ausgedacht — sie wird nie getippt, sondern kommt
