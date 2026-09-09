@@ -48,6 +48,7 @@ Schönheitsfehler, sondern ein wachsendes Archiv.
 | Netlify | ✔ | ✔ | ✔ | (✔) | ✔ | ✔ | ✔ |
 | Vercel | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
 | GitHub Pages | **✖** | — | ✖ | — | ✔ | ✔ | ✖ |
+| **AWS S3 + CloudFront** | ✔ | ✔✔ | ✔✔ (s. u.) | **✖ nur mit eigenem Code** | ✔✔ IAM je Bucket | ✔ | ✔✔ |
 
 ### Was die Zeilen bedeuten
 
@@ -77,6 +78,81 @@ Anmeldung an der Kante ganz zu verzichten. Die Entscheidungsmatrix des
 Spikes bewertet genau das (H3 allein gegen H3+H1) und kommt bei
 Authentifizierung auf `−` statt `++`. Für einen Baum, dessen einziges
 Schloss dann eine Passphrase ist, ist das die falsche Richtung.
+
+### AWS S3 mit CloudFront — nachgetragen am 2026-09-09
+
+Auf Nachfrage des Inhabers bewertet, der dort ein Konto hat und die
+Plattform kennt. **S3 allein scheidet aus:** Der Website-Endpunkt eines
+Buckets spricht nur HTTP, und S3 (TLS für alle externen Verbindungen)
+verlangt HTTPS. Bewertet wird deshalb S3 **mit CloudFront** davor.
+
+**Bei drei Kriterien ist das die beste Antwort im ganzen Feld:**
+
+- **E (Deploy-Recht je Projekt):** Eine IAM-Richtlinie lässt sich auf genau
+  einen Bucket-ARN und auf `PutObject`, `DeleteObject`, `ListBucket`
+  einengen. Das ist das Kriterium, an dem Cloudflare scheitert und dort ein
+  eigenes Konto als Umweg braucht. Hier braucht es keinen Umweg.
+- **B (Regel außerhalb des Deployments):** Bucket-Richtlinie und
+  CloudFront-Verteilung liegen nicht in den Objekten. Wer nur schreiben
+  darf, kann die Regel davor nicht anfassen — und anders als bei einem
+  Anbieter-Schalter ist das nachweisbar, weil es in der IAM-Richtlinie
+  steht.
+- **G (Sicherheits-Header):** Eine Response-Headers-Policy in CloudFront,
+  ebenfalls außerhalb des Deployments.
+
+**Bei C ist es sogar strukturell besser — mit einer Falle.** Es gibt gar
+keine Deployment-Historie: Der Upload überschreibt Objekte, alte Fassungen
+verschwinden von selbst. Genau deshalb ist **Bucket-Versionierung hier
+gefährlich**. Ist sie eingeschaltet — und sie ist es oft, aus guten
+Gründen —, bewahrt der Bucket jede je hochgeladene Fassung auf, und wegen
+des stabilen Salts stehen alle unter demselben Schlüssel. Aus dem Vorteil
+wird dann der schlimmste Fall des Feldes. Versionierung muss aus sein, oder
+eine Lebenszyklusregel muss ältere Fassungen verfallen lassen.
+
+**Die Lücke ist D, und sie ist nicht klein.** AWS hat für CloudFront **keine
+verwaltete Anmeldung**. Jeder dokumentierte Weg — Cognito, Okta, Auth0 —
+läuft über **Lambda@Edge**: eine Funktion, die Cookies prüft, JWTs
+validiert und den OIDC-Fluss abwickelt. Das ist Sitzungscode, den der
+Inhaber besitzt, betreibt und patcht. Abschnitt 8.3 schließt genau das aus
+(„kein eigenes Anmeldeformular, kein eigener Sitzungscode"), und
+Kriterium 10 der Entscheidungsmatrix bewertet Patch- und Betriebsaufwand.
+Für ein System, dessen erklärter Vorzug ist, dass draußen nichts zu
+patchen ist, wäre eine selbstbetriebene Authentifizierungsfunktion der
+teuerste einzelne Rückschritt.
+
+**Zwei verwaltete Auswege, beide mit Preis:**
+
+1. **AWS Amplify Hosting** vor dem Bucket: Der Zugriffsschutz ist ein
+   Schalter in der Konsole — Benutzername und Passwort, kein Code. Damit
+   ist D formal verletzt (ein geteiltes Passwort statt Anmeldung über einen
+   Identitätsanbieter mit Authenticator-App), aber es ist eine echte,
+   verwaltete Schranke.
+2. **CloudFront Functions mit Basic Auth**: rund zehn Zeilen, zustandslos,
+   kein Cookie, kein Tokentausch. Weniger als Lambda@Edge, aber immer noch
+   eigener Code an der Kante.
+
+**Einordnung.** Gemessen an den Kriterien, wie sie geschrieben sind, bleibt
+Cloudflare vorn: Sein einziger Fehler (E) hat einen sauberen Ausweg — ein
+eigenes Konto —, während der Fehler von AWS (D) nur durch eigenen Code oder
+durch eine Änderung der Entscheidung **E2** zu beheben ist.
+
+Die Änderung von E2 ist allerdings **vertretbar und nicht abwegig**, und
+zwar aus einem Grund, der zum Zeitpunkt von E2 noch nicht galt: Damals war
+Stufe 1 im Spiel, und die Kantenanmeldung war das **einzige** Schloss vor
+Klartext. Seit der Entscheidung zu O1 gibt es Stufe 1 nicht mehr. Draußen
+liegt nur Chiffrat, und das eigentliche Schloss ist die Passphrase. Die
+Kantenanmeldung hält dann Scanner und Neugierige ab und verbirgt, dass es
+die Seite gibt — dafür genügt ein geteiltes Passwort über TLS.
+
+Dagegen steht etwas, das keine Tabelle abbildet: **Wer den Notausschalter
+in der Hand hat, muss ihn im Ernstfall finden.** Abschnitt 12 verlangt
+Rückbau und Abschaltung unter Zeitdruck. Eine Konsole, die der Inhaber
+kennt, ist dabei mehr wert als eine Zeile in einer Bewertungstabelle.
+
+**Damit ist es eine Entscheidung des Inhabers und keine Rechnung**, und sie
+lautet nicht „AWS oder Cloudflare", sondern: **Soll die Anmeldung an der
+Kante MFA über einen Identitätsanbieter sein (dann Cloudflare), oder genügt
+ein zweites, geteiltes Passwort vor dem Chiffrat (dann AWS)?**
 
 ## Empfehlung: Cloudflare Pages mit Cloudflare Access
 
@@ -133,3 +209,6 @@ Abgerufen am 2026-09-09.
 - [Azure Static Web Apps: Zugriffsregeln in `staticwebapp.config.json`](https://learn.microsoft.com/en-us/azure/static-web-apps/configuration)
 - [Netlify: Passwortschutz ist Pro-Merkmal für neue Konten](https://netli.fyi/blog/restrict-access-netlify-site-with-passwords)
 - [Vercel: Password Protection nur ab Pro](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/password-protection)
+- [CloudFront-Anmeldung nur über Lambda@Edge (AWS-Beispiel mit Cognito)](https://github.com/aws-samples/cloudfront-authorization-at-edge)
+- [AWS Amplify Hosting: Zugriffsschutz per Benutzername und Passwort](https://docs.aws.amazon.com/amplify/latest/userguide/deploy-website-from-s3.html)
+- [Amplify Hosting kann direkt aus einem S3-Bucket ausliefern](https://aws.amazon.com/about-aws/whats-new/2024/10/aws-amplify-amazon-s3-static-website-hosting)
