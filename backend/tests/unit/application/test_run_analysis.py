@@ -23,6 +23,7 @@ from ai_trading_analyst.application.run_analysis import AgentConcurrency, RunAna
 from ai_trading_analyst.bootstrap import build_scoring_params
 from ai_trading_analyst.config.loader import load_config
 from ai_trading_analyst.domain.analysis import (
+    AnalysisRunSummary,
     MarketDataProviderError,
     RepeatSuppressionParameters,
     RunStatus,
@@ -40,7 +41,12 @@ from ai_trading_analyst.domain.fundamentals import FundamentalStatus
 from ai_trading_analyst.domain.options import OptionsStatus
 from ai_trading_analyst.domain.report import REPORT_SCHEMA_VERSION
 from ai_trading_analyst.domain.research import ResearchReport, ResearchStatus
-from ai_trading_analyst.domain.scheduling import Notifier, NotifierError
+from ai_trading_analyst.domain.scheduling import (
+    DashboardPublisher,
+    DashboardPublisherError,
+    Notifier,
+    NotifierError,
+)
 from ai_trading_analyst.domain.scoring import ScoreKind, ScoreStatus
 from ai_trading_analyst.domain.screening import (
     SIGNAL_RULE_VERSION,
@@ -127,6 +133,7 @@ def _build_use_case(
     notifier: Notifier | None = None,
     notify_without_candidates: bool = False,
     repeat_suppression: RepeatSuppressionParameters | None = None,
+    dashboard_publisher: DashboardPublisher | None = None,
 ) -> tuple[
     RunAnalysisUseCase,
     FakeStockRepository,
@@ -161,6 +168,7 @@ def _build_use_case(
         notifier=notifier,
         notify_without_candidates=notify_without_candidates,
         repeat_suppression=repeat_suppression,
+        dashboard_publisher=dashboard_publisher,
     )
     return use_case, stocks_repo, runs_repo, results_repo, errors_repo
 
@@ -1834,3 +1842,119 @@ class TestVeralteteDaten:
 
         assert len(bericht.outcomes) == 1  # type: ignore[attr-defined]
         assert bericht.errors == ()  # type: ignore[attr-defined]
+
+
+class _MitschreibenderKanal:
+    """Haelt fest, was gesendet wurde."""
+
+    def __init__(self) -> None:
+        self.gesendet: list[tuple[str, str]] = []
+
+    def send(self, subject: str, body: str) -> None:
+        self.gesendet.append((subject, body))
+
+
+class _FakeDashboardPublisher:
+    """Zaehlt Aufrufe und scheitert auf Wunsch."""
+
+    def __init__(self, fehler: Exception | None = None) -> None:
+        self.aufrufe = 0
+        self._fehler = fehler
+
+    def publish(self) -> None:
+        self.aufrufe += 1
+        if self._fehler is not None:
+            raise self._fehler
+
+
+class TestDashboardExport:
+    """Der Snapshot fuer das Dashboard ausserhalb des Servers (ADR 0060).
+
+    Die eine Zusage, auf die es hier ankommt: Ein Export, der nicht
+    schreiben kann, macht aus einem erledigten Lauf keinen gescheiterten.
+    Das Ergebnis steht zu diesem Zeitpunkt bereits in der Datenbank.
+    """
+
+    def _lauf(
+        self,
+        publisher: DashboardPublisher | None,
+        notifier: Notifier | None = None,
+    ) -> AnalysisRunSummary:
+        provider = FakeMarketDataProvider(
+            stocks=(make_stock("AAA"),),
+            series_by_symbol={"AAA": make_series(_SERIES_LENGTH, candidate=True)},
+        )
+        use_case, *_ = _build_use_case(
+            provider, notifier=notifier, dashboard_publisher=publisher
+        )
+        return use_case.execute()
+
+    def test_der_snapshot_wird_nach_dem_lauf_geschrieben(self) -> None:
+        publisher = _FakeDashboardPublisher()
+        self._lauf(publisher)
+        assert publisher.aufrufe == 1
+
+    def test_ohne_publisher_geschieht_nichts(self) -> None:
+        """Ein manuelles ``cli screen`` exportiert nicht."""
+        summary = self._lauf(None)
+        assert summary.run.status is RunStatus.COMPLETED
+
+    def test_ein_gescheiterter_export_laesst_den_lauf_gelten(self) -> None:
+        publisher = _FakeDashboardPublisher(DashboardPublisherError("kein Platz"))
+        summary = self._lauf(publisher)
+        assert summary.run.status is RunStatus.COMPLETED
+        assert summary.run.error_message is None
+
+    def test_ein_unerwarteter_fehler_laesst_den_lauf_ebenfalls_gelten(self) -> None:
+        """Auch alles, was der Port nicht zugesagt hat.
+
+        Die Alternative waere, dass ein Programmierfehler im Exporter einen
+        vollstaendig gerechneten Tageslauf als gescheitert ausweist.
+        """
+        publisher = _FakeDashboardPublisher(RuntimeError("unerwartet"))
+        summary = self._lauf(publisher)
+        assert summary.run.status is RunStatus.COMPLETED
+
+    def test_ein_fehlschlag_wird_gemeldet(self) -> None:
+        """Ein Dashboard, das stillschweigend auf gestrigen Zahlen stehen
+        bleibt, waere der gefaehrlichere Ausgang."""
+        kanal = _MitschreibenderKanal()
+        publisher = _FakeDashboardPublisher(DashboardPublisherError("kein Platz"))
+        self._lauf(publisher, notifier=kanal)
+        betreffe = [betreff for betreff, _ in kanal.gesendet]
+        assert "Dashboard nicht aktualisiert" in betreffe
+
+    def test_die_meldung_nennt_keine_inhalte(self) -> None:
+        """ADR 0040: Der Kanal traegt keine Ergebnisse."""
+        kanal = _MitschreibenderKanal()
+        publisher = _FakeDashboardPublisher(DashboardPublisherError("kein Platz"))
+        self._lauf(publisher, notifier=kanal)
+        text = next(
+            text
+            for betreff, text in kanal.gesendet
+            if betreff == "Dashboard nicht aktualisiert"
+        )
+        assert "AAA" not in text
+
+    def test_ein_gelungener_export_meldet_nichts(self) -> None:
+        kanal = _MitschreibenderKanal()
+        self._lauf(_FakeDashboardPublisher(), notifier=kanal)
+        assert "Dashboard nicht aktualisiert" not in [betreff for betreff, _ in kanal.gesendet]
+
+    def test_ohne_kanal_faellt_der_hinweis_aus_und_nichts_bricht(self) -> None:
+        publisher = _FakeDashboardPublisher(DashboardPublisherError("kein Platz"))
+        summary = self._lauf(publisher, notifier=None)
+        assert summary.run.status is RunStatus.COMPLETED
+
+    def test_ein_unerreichbarer_kanal_haelt_den_lauf_nicht_an(self) -> None:
+        """Zwei ineinander verschachtelte Systemgrenzen, und keine von beiden
+        haelt den Lauf an."""
+
+        class StummerKanal:
+            def send(self, subject: str, body: str) -> None:
+                raise NotifierError("Kanal weg")
+
+        publisher = _FakeDashboardPublisher(DashboardPublisherError("kein Platz"))
+        summary = self._lauf(publisher, notifier=StummerKanal())
+        assert summary.run.status is RunStatus.COMPLETED
+

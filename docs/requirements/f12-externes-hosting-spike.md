@@ -861,6 +861,14 @@ die Abnahmekriterien AK1–AK18 und Negativtests N1–N19 laufen gegen diesen
 Code. Was einen Anbieter braucht — Phase 2 und die Nachweise AK1–AK9 zur
 Kante —, bleibt unverändert Voraussetzung für die Annahme von ADR 0060.
 
+**Die Umsetzung weicht in zwei Punkten von Abschnitt 8 ab**, jeweils zugunsten
+des inkrementellen Uploads: In den Zusatzdaten der Verschlüsselung steht die
+Kennung des Datenbaums statt der des einzelnen Exports, und das Salt ist
+stabil statt neu je Export. Was Negativtest N17 damit fängt, fängt
+stattdessen ein Klartext-Hash je Pfad im Manifest. Begründung und die dadurch
+schärfer zu benennenden Restrisiken stehen im Nachtrag vom 2026-09-08 zu
+[ADR 0060](../adr/0060-dashboard-ausserhalb-des-servers.md).
+
 ---
 
 ## 11. Proof-of-Concept-Plan

@@ -370,3 +370,51 @@ tr.duenn td,
 tr.duenn th {
   color: var(--gedaempft);
 }
+
+/* Der Stand des Datenbaums ausserhalb des Servers (ADR 0060). Er steht ueber
+   jeder Ansicht: Ein alter Stand muss alt aussehen. */
+.stand {
+  margin: 0 auto 1rem;
+  max-width: 60rem;
+  border: 1px solid var(--linie);
+  border-radius: 0.4rem;
+  background: var(--flaeche);
+  padding: 0.5rem 0.75rem;
+  color: var(--gedaempft);
+  font-size: 0.85rem;
+}
+
+.zugang {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 22rem;
+}
+
+.zugang input,
+.zugang button {
+  padding: 0.5rem;
+  border: 1px solid var(--linie);
+  border-radius: 0.3rem;
+  background: var(--grund);
+  color: var(--schrift);
+  font: inherit;
+}
+
+.zugang button {
+  background: var(--flaeche);
+  cursor: pointer;
+}
+
+.zugang button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.gedaempft {
+  color: var(--gedaempft);
+  font-size: 0.85rem;
+}
+
+.fehler {
+  color: var(--warnung);
+}

@@ -324,3 +324,74 @@ kein Token und keinen Upload; der Exporter schreibt in ein Verzeichnis.
 
 Der Satz „und ein Prototyp im PoC, der nicht gemergt wird" unter
 „Negativ und offen" ist damit gegenstandslos.
+
+---
+
+## Nachtrag vom 2026-09-08 — was die Umsetzung anders macht, und warum
+
+Die Umsetzung liegt auf `feature/dashboard-export-extern`. Sie folgt den elf
+Entscheidungen mit **zwei Abweichungen in Punkt 6**, beide aus demselben
+Grund und beide bewusst. Sie stehen hier, damit in einem halben Jahr nicht
+zu raten ist, ob es Absicht war.
+
+**Erstens: In den Zusatzdaten der Verschlüsselung steht die Kennung des
+Datenbaums, nicht die des einzelnen Exports.** Punkt 6 verlangte die
+Export-Kennung. Sie hätte erzwungen, bei jedem Lauf **jede** Datei neu zu
+verschlüsseln — auch die zweihundert Charts, an denen sich nichts geändert
+hat — und damit jeden Lauf zu einem vollständigen Upload gemacht. Was die
+Export-Kennung leisten sollte, nämlich das Einspielen einer Datei aus einem
+anderen Stand, leistet stattdessen das **Manifest**: Es trägt je Pfad den
+SHA-256 des Klartexts, wird bei jedem Export neu geschrieben und im Browser
+geprüft. Das ist für die einzelne Datei mindestens gleichwertig — eine Datei,
+die zu diesem Baum, aber nicht zu diesem Export gehört, fällt durch, auch
+wenn sie sich einwandfrei entschlüsselt.
+
+**Zweitens: Salt und Baumkennung sind stabil über viele Exporte**, nicht neu
+je Export. Derselbe Grund: Ein neues Salt je Lauf ergäbe einen neuen
+Schlüssel, damit neue Dateinamen und damit einen vollständig neuen Baum.
+Gewechselt wird beides, wenn der Baum bewusst neu aufgesetzt wird. Ein
+Wechsel der Passphrase allein wechselt sie **nicht** — er wechselt den
+Schlüssel, und die alten Dateien verschwinden als verwaist.
+
+### Drei Restrisiken, die dabei schärfer zu benennen sind
+
+- **Der Änderungsverlauf je Datei liegt beim Anbieter offen.** Weil
+  unveränderte Dateien nicht neu geschrieben werden und die opaken Namen
+  stabil sind, sieht der Anbieter, welcher Name an welchem Tag neue Bytes
+  bekam. Über die Zeit lassen sich Namen zu Aktien-Gruppen bündeln und deren
+  Aktivität gegen öffentliche Marktereignisse halten. Das ist der Preis
+  dafür, nicht bei jedem Lauf alles hochzuladen — dieselbe Sorte Profil, vor
+  der die Auffüllung auf Größenklassen schützt, nur über die Zeitachse statt
+  über die Größe. Wer das nicht will, zahlt es mit einem Vollupload je Lauf.
+  Ebenso sichtbar: die **Zahl** der Dateien, und damit grob die Zahl der
+  Läufe, Berichte, Messungen und Watchlist-Titel.
+- **Das Zurückspielen eines vollständigen alten Standes bleibt offen und ist
+  unbefristet möglich.** Manifest und Dateien zusammen sind in sich stimmig,
+  jede Prüfsumme passt, die Verschlüsselung merkt nichts. Die Oberfläche
+  führt deshalb den zuletzt gesehenen Exportzeitpunkt im Browser mit und
+  warnt bei einem Rückschritt. Das ist ein Hinweis und kein Beweis: Der
+  Vermerk gilt je Browser, ein anderes Gerät fängt bei null an, und wer ihn
+  löscht, sieht die Warnung nicht mehr. Ein echter Anker wäre einer, den der
+  Anbieter nicht schreiben kann — den gibt es hier nicht.
+- **Stufe 1 komprimiert nicht.** Der Spike-Bericht (8.2) nennt Kompression
+  „wo der Anbieter sie nicht selbst komprimiert"; die Umsetzung überlässt sie
+  in Stufe 1 der Übertragungskompression des Anbieters und komprimiert erst
+  in Stufe 2, wo sie zwingend ist. Da Stufe 2 unmittelbar folgt (E1), ist das
+  ein Zwischenstand und keine Festlegung.
+
+### Was zusätzlich entstanden ist, ohne im ADR zu stehen
+
+- Eine **Sperre** gegen zwei gleichzeitige Exporte in dasselbe Verzeichnis.
+  Ohne sie schreiben Tageslauf und Handbefehl zwei verschiedene Manifeste,
+  und der Browser meldet danach Prüfsummenfehler — ein Fehlalarm, der genau
+  wie der Angriff aussieht, gegen den die Prüfsumme steht.
+- Ein Argument `--dashboard-export` an `cli dispatch`, wie Punkt 2 es
+  verlangt: Geschaltet wird über die Aufgabenplanung, nicht über eine im
+  öffentlichen Repository versionierte Datei. Damit ist auch der
+  Notausschalter K3 des Spike-Berichts wörtlich ausführbar.
+- Ein **Wächter** gegen eine Zustandsdatei innerhalb des veröffentlichten
+  Verzeichnisses. Sie trägt die Zuordnung von Pfad zu opakem Namen; läge sie
+  drinnen, wäre die Verschlüsselung der Dateinamen umsonst.
+
+Der Status dieses ADR bleibt **Vorgeschlagen**. Punkt 10 bindet die Annahme
+an den Proof of Concept beim Anbieter, und der steht aus.

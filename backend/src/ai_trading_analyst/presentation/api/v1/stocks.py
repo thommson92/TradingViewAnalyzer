@@ -1,4 +1,8 @@
-"""``/api/v1/stocks`` -- die Analysehistorie einer Aktie (US-010)."""
+"""``/api/v1/stocks`` -- die Analysehistorie einer Aktie (US-010).
+
+Der Zusammenbau steht in ``..views`` -- derselbe Code, aus dem der
+Exportschritt seinen Datenbaum schreibt (ADR 0060).
+"""
 
 from __future__ import annotations
 
@@ -13,37 +17,28 @@ from ai_trading_analyst.domain.analysis import (
     MarketDataProvider,
     MarketDataProviderError,
     MarketDataUnavailableError,
-    Stock,
     UnitOfWork,
 )
-from ai_trading_analyst.domain.backtesting import (
-    BacktestParameters,
-    pool_trades,
-    thresholds_of,
-)
+from ai_trading_analyst.domain.backtesting import BacktestParameters
 from ai_trading_analyst.domain.screening import CandidateRuleParameters
 from ai_trading_analyst.presentation.validation_chart import build_chart_payload
 
+from .. import views
 from ..dependencies import (
     get_backtest_parameters,
     get_candidate_rule_parameters,
     get_chart_market_data,
     get_unit_of_work_factory,
 )
-from ..schemas import (
-    OptionsCombinationResponse,
-    OptionsMeasurementResponse,
-    OptionsStockRowResponse,
-    OptionsTradeResponse,
-    Page,
-    ReportSummaryResponse,
-    SignalBacktestResponse,
-    StockBacktestResponse,
-)
+from ..schemas import Page, ReportSummaryResponse, StockBacktestResponse
 
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/stocks", tags=["stocks"])
+
+
+def _als_404(fehler: views.NotFoundError) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(fehler))
 
 
 @router.get("/{symbol}/reports", response_model=Page[ReportSummaryResponse])
@@ -61,29 +56,11 @@ def list_reports_of_stock(
     Eine unbekannte Aktie ist ein 404; eine bekannte ohne Bericht liefert eine
     leere Seite -- sie war nie Kandidat, und das ist eine Auskunft.
     """
-    gesucht = symbol.strip().upper()
     with uow_factory() as uow:
-        if uow.stocks.get_by_symbol(gesucht) is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Aktie nicht gefunden."
-            )
-        reports = uow.stock_reports.list_for_symbol(gesucht, limit=limit, offset=offset)
-        total = uow.stock_reports.count_for_symbol(gesucht)
-    return Page(
-        items=[ReportSummaryResponse.from_domain(report) for report in reports],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
-
-
-def _aktie_oder_404(uow: UnitOfWork, symbol: str) -> Stock:
-    aktie = uow.stocks.get_by_symbol(symbol)
-    if aktie is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Aktie nicht gefunden."
-        )
-    return aktie
+        try:
+            return views.reports_of_stock(uow, symbol, limit=limit, offset=offset)
+        except views.NotFoundError as fehler:
+            raise _als_404(fehler) from fehler
 
 
 @router.get("/{symbol}/backtest", response_model=StockBacktestResponse)
@@ -104,54 +81,16 @@ def get_stock_backtest(
     die Optionsseite leer -- der Signal-Backtest steht trotzdem, denn er
     entsteht im Tageslauf und haengt am Messlauf nicht.
     """
-    gesucht = symbol.strip().upper()
     with uow_factory() as uow:
-        aktie = _aktie_oder_404(uow, gesucht)
-        signal_backtests = [
-            SignalBacktestResponse.from_domain(ergebnis)
-            for ergebnis in uow.backtest_results.list_for_stock(aktie.id)
-        ]
-        messung_id = (
-            measurement_id
-            if measurement_id is not None
-            else uow.options_backtest_results.latest_measurement_id()
-        )
-        if messung_id is None:
-            return StockBacktestResponse(
-                symbol=gesucht,
-                signal_backtests=signal_backtests,
-                measurement=None,
-                combinations=[],
-                pooled=None,
-                trades=[],
+        try:
+            return views.stock_backtest(
+                uow,
+                symbol,
+                measurement_id=measurement_id,
+                backtest_params=backtest_params,
             )
-        kombinationen = uow.options_backtest_results.list_for_stock(messung_id, aktie.id)
-        trades = uow.options_backtest_results.list_trades_for_stock(messung_id, aktie.id)
-        kopf = uow.options_backtest_results.get_measurement(messung_id)
-        if kopf is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Messung nicht gefunden."
-            )
-        # Mit den Schwellen dieser Messung, nicht denen von heute.
-        schwellen = thresholds_of(kopf[1], backtest_params)
-        gepoolt = pool_trades([trade for _, trade in trades], schwellen)
-        return StockBacktestResponse(
-            symbol=gesucht,
-            signal_backtests=signal_backtests,
-            measurement=OptionsMeasurementResponse.from_domain(kopf[0], kopf[1]),
-            combinations=[
-                OptionsCombinationResponse.from_domain(ergebnis)
-                for ergebnis in kombinationen
-                if ergebnis.episodes
-            ],
-            # Auch ohne einen einzigen Trade: Die Zeile sagt dann
-            # ``INSUFFICIENT_DATA`` statt zu fehlen, und das ist eine Auskunft.
-            pooled=OptionsStockRowResponse.from_domain(aktie.id, gesucht, gepoolt),
-            trades=[
-                OptionsTradeResponse.from_domain(kombination, trade)
-                for kombination, trade in trades
-            ],
-        )
+        except views.NotFoundError as fehler:
+            raise _als_404(fehler) from fehler
 
 
 @router.get("/{symbol}/chart")
@@ -172,9 +111,12 @@ def get_stock_chart(
     ganze Reihe: Fuenf Jahre sind rund 2.500 Kerzen, und ein Fenster
     verschoebe die Frage, welches das richtige ist, in die Oberflaeche.
     """
-    gesucht = symbol.strip().upper()
+    gesucht = views.normalisiertes_symbol(symbol)
     with uow_factory() as uow:
-        aktie = _aktie_oder_404(uow, gesucht)
+        try:
+            aktie = views.aktie(uow, gesucht)
+        except views.NotFoundError as fehler:
+            raise _als_404(fehler) from fehler
     try:
         series = market_data.get_candle_series(aktie)
     except MarketDataUnavailableError as fehler:

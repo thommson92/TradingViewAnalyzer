@@ -36,6 +36,21 @@ dependencies = [
     # rohes httpx fehleranfaellig nachzubauen -- anders als beim einzelnen
     # GET-Aufruf des Finnhub-Adapters.
     "anthropic>=0.100,<1",
+    # AES-256-GCM fuer den verschluesselten Datenbaum des externen Dashboards
+    # (ADR 0060, Stufe 2). Die Standardbibliothek kann PBKDF2 und HMAC, aber
+    # keine authentifizierte Verschluesselung -- und eine selbstgebaute waere
+    # genau die Sorte Code, die man nicht selbst baut. Die Gegenseite im
+    # Browser ist WebCrypto und braucht keine Bibliothek.
+    #
+    # **Untergrenze 50, nicht 43.** Der erste Wurf hier lautete ">=43,<47" und
+    # loeste damit 46.0.7 auf -- eine Fassung mit sechs bekannten
+    # Schwachstellen, die der Audit-Lauf der CI gemeldet hat. Der zweite
+    # Versuch, ">=49", war immer noch zu niedrig: 49.0.0 traegt
+    # PYSEC-2026-3552, und behoben ist das erst in 50.0.0. Bei einer
+    # Bibliothek, die genau die Verschluesselung dieses Datenbaums traegt,
+    # faengt der zulaessige Bereich deshalb oberhalb *aller* bekannten
+    # Behebungen an -- gegengeprueft mit ``pip-audit``, nicht geschaetzt.
+    "cryptography>=50,<51",
 ]
 
 [project.optional-dependencies]

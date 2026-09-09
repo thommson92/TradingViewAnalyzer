@@ -76,6 +76,8 @@ from ai_trading_analyst.bootstrap import (
     build_agent_concurrency,
     build_analyst_recommendations_provider,
     build_backtest_params,
+    build_candidate_rule_params,
+    build_dashboard_publisher,
     build_earnings_filter_params,
     build_earnings_provider,
     build_fundamental_data_provider,
@@ -156,6 +158,7 @@ from ai_trading_analyst.domain.options import (
 )
 from ai_trading_analyst.domain.research import ResearchReport
 from ai_trading_analyst.domain.scheduling import (
+    DashboardPublisherError,
     DispatchDecision,
     SchedulerParameters,
     TradingCalendarError,
@@ -3650,6 +3653,73 @@ abgelaufene Nachholzeitraum, weil dann tatsaechlich etwas ausgefallen ist.
 """
 
 
+def command_publish(args: argparse.Namespace) -> int:
+    """Schreibt den Snapshot des Dashboards von Hand (ADR 0060).
+
+    Denselben Baum schreibt der Tageslauf am Ende jedes Laufs. Von Hand
+    gebraucht wird er in drei Lagen: nach einem Anbieterwechsel, nach einem
+    Wechsel der Passphrase und immer dann, wenn Zweifel besteht, ob draussen
+    steht, was hier liegt -- dafuer ``--full``, das den bekannten Stand
+    verwirft und jede Datei neu schreibt.
+
+    **Ohne Schalter fuer Klartext.** Ob verschluesselt wird, steht in der
+    Konfiguration und nicht in der Kommandozeile: Ein Schalter, der die
+    Verschluesselung "nur eben kurz" abschaltet, waere genau der Weg, auf dem
+    ein Klartextbaum entsteht und liegen bleibt (Spike-Bericht, Abschnitt
+    8.8).
+    """
+    loaded = load_config(args.config)
+    config = loaded.config
+    configure_logging(LoggingConfig(level="INFO", format="console"))
+
+    if args.directory is not None:
+        config = config.model_copy(
+            update={
+                "dashboard_export": config.dashboard_export.model_copy(
+                    update={"target": "directory", "directory": args.directory}
+                )
+            }
+        )
+
+    # Vor der Datenbank: Ein abgeschalteter Export braucht keine Verbindung,
+    # und die Meldung dazu soll nicht hinter einem Verbindungsfehler stehen.
+    if config.dashboard_export.target == "none":
+        print(
+            "Der Dashboard-Export ist abgeschaltet (dashboard_export.target = 'none'). "
+            "Entweder '--directory <pfad>' mitgeben oder die Konfiguration setzen.",
+            file=sys.stderr,
+        )
+        return 2
+
+    engine = _open_database()
+    if engine is None:
+        return 2
+    session_factory = build_session_factory(engine)
+
+    def uow_factory() -> UnitOfWork:
+        return SqlAlchemyUnitOfWork(session_factory)
+
+    try:
+        publisher = build_dashboard_publisher(
+            config, Secrets(), project_root(loaded.source_path), uow_factory=uow_factory
+        )
+    except (ValueError, MissingSecretError) as error:
+        print(f"Konfiguration: {error}", file=sys.stderr)
+        return 2
+
+    if publisher is None:  # pragma: no cover -- oben bereits abgefangen
+        return 2
+
+    try:
+        bericht = publisher.schreibe_baum(voll=args.full)
+    except DashboardPublisherError as error:
+        print(f"Snapshot nicht geschrieben: {error}", file=sys.stderr)
+        return 1
+
+    print(f"Snapshot geschrieben: {bericht.als_text()}")
+    return 0
+
+
 def command_dispatch(args: argparse.Namespace) -> int:
     """Der Einstieg fuer die Aufgabenplanung (ADR 0019).
 
@@ -3720,6 +3790,19 @@ def command_dispatch(args: argparse.Namespace) -> int:
             )
         notifications = config.notifications.model_copy(update=aenderung)
         config = config.model_copy(update={"notifications": notifications})
+    if args.dashboard_export is not None:
+        # Wie die Anbieter: geschaltet wird ueber ein Argument der
+        # Aufgabenplanung, nicht ueber eine Datei, die im oeffentlichen
+        # Repository versioniert ist (ADR 0060, Punkt 2). Und es ist der
+        # Notausschalter K3 des Spike-Berichts -- "none" mitgeben, Aufgabe
+        # speichern, fertig.
+        config = config.model_copy(
+            update={
+                "dashboard_export": config.dashboard_export.model_copy(
+                    update={"target": args.dashboard_export}
+                )
+            }
+        )
 
     # Vor dem Lauf, nicht in der Analyse: Ein fehlendes Geheimnis ist ein
     # Konfigurationsfehler und kein voruebergehender Ausfall. Erst hinter dem
@@ -3762,6 +3845,18 @@ def command_dispatch(args: argparse.Namespace) -> int:
     bar_source = build_ibkr_bar_source(config)
     runs = SqlAlchemyDispatcherRunRepository(session_factory(), engine)
 
+    # Vor dem Lauf gebaut und nicht darin: Eine fehlende Passphrase oder ein
+    # fehlendes Verzeichnis soll auffallen, bevor der halbstuendige Backfill
+    # anlaeuft -- und nicht erst, wenn der Lauf fertig ist und der Snapshot
+    # nicht hinausgeht (dasselbe Muster wie beim Frueh-Abbruch der Anbieter).
+    try:
+        dashboard_publisher = build_dashboard_publisher(
+            config, secrets, project_root(loaded.source_path), uow_factory=uow_factory
+        )
+    except (ValueError, MissingSecretError) as error:
+        print(f"Konfiguration (Dashboard-Export): {error}", file=sys.stderr)
+        return 2
+
     def backfill() -> None:
         bericht = BackfillHistoryUseCase(
             bar_source, uow_factory, default_days=standardzeitraum
@@ -3792,11 +3887,7 @@ def command_dispatch(args: argparse.Namespace) -> int:
             bar_source=None if config.market_data.source == "stored" else bar_source,
             uow_factory=uow_factory,
         )
-        rule = CandidateRuleParameters(
-            required_crossing_signals=config.screening.required_crossing_signals,
-            signal_lookback_previous_candles=config.screening.signal_lookback_previous_candles,
-            warmup_candles=indicators.warmup_candles,
-        )
+        rule = build_candidate_rule_params(indicators, config)
         zusammenfassung = RunAnalysisUseCase(
             provider,
             earnings_provider,
@@ -3824,6 +3915,9 @@ def command_dispatch(args: argparse.Namespace) -> int:
             # Nur im Tageslauf: Ein manueller 'screen' kennt keine Sperre --
             # dort entscheidet der Mensch, was er sehen will (ADR 0054).
             repeat_suppression=build_repeat_suppression_params(config),
+            # Der Snapshot fuer das Dashboard ausserhalb des Servers
+            # (ADR 0060). Ausgeliefert ist er abgeschaltet und damit ``None``.
+            dashboard_publisher=dashboard_publisher,
         ).execute()
         kandidaten = [
             ergebnis.stock.symbol
@@ -4281,6 +4375,16 @@ def build_parser() -> argparse.ArgumentParser:
             "Aufgabenplanung statt in config/default.yaml."
         ),
     )
+    dispatch.add_argument(
+        "--dashboard-export",
+        choices=("none", "directory"),
+        default=None,
+        help=(
+            "Uebersteuert dashboard_export.target nur fuer diesen Lauf (ADR 0060). "
+            "'none' ist zugleich der Notausschalter: Er haelt den Tageslauf nicht an, "
+            "sondern laesst nur den Snapshot aus."
+        ),
+    )
     dispatch.set_defaults(handler=command_dispatch)
 
     backtest = subparsers.add_parser(
@@ -4733,6 +4837,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Datei statt Konsole. Wird vor dem ersten Datenbankzugriff geprueft.",
     )
     report.set_defaults(handler=command_report)
+
+    publish = subparsers.add_parser(
+        "publish",
+        help="Schreibt den Snapshot des Dashboards fuer ausserhalb des Servers (ADR 0060).",
+    )
+    publish.add_argument(
+        "--directory",
+        default=None,
+        help=(
+            "Zielverzeichnis, relativ zur Projektwurzel. Ohne Angabe gilt "
+            "dashboard_export.directory aus der Konfiguration."
+        ),
+    )
+    publish.add_argument(
+        "--full",
+        action="store_true",
+        help=(
+            "Verwirft den bekannten Stand und schreibt jede Datei neu. Nach einem "
+            "Anbieterwechsel, nach einem Wechsel der Passphrase und immer dann, wenn "
+            "zweifelhaft ist, ob draussen steht, was hier liegt."
+        ),
+    )
+    publish.set_defaults(handler=command_publish)
     return parser
 
 

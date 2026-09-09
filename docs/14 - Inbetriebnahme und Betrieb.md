@@ -1019,6 +1019,264 @@ Mobilfunknetz (WLAN aus) ist die Adresse **nicht** erreichbar.
 
 ---
 
+# Stufe K — Das Dashboard außerhalb des Servers
+
+**Noch nicht entschieden.** [ADR 0060](adr/0060-dashboard-ausserhalb-des-servers.md)
+ist vorgeschlagen; angenommen wird es erst nach einem Proof of Concept beim
+Anbieter. Diese Stufe beschreibt deshalb nur, was **ohne** Anbieter geht:
+den Datenbaum auf dem Server erzeugen und nachsehen, ob er trägt. Kein
+Konto, kein Token, kein Upload, keine Firewall-Regel — Stufe J bleibt
+unberührt, und der Server bekommt nichts Eingehendes.
+
+Der Gedanke kehrt Stufe J um: Nicht der Nutzer kommt zum Server, sondern die
+Ergebnisse gehen zum Nutzer. Der Server schreibt nach jedem Lauf einen
+Datenbaum aus denselben lesenden Endpunkten, die auch das LAN-Dashboard
+nutzt, und verschlüsselt ihn. Entschlüsselt wird erst im Browser.
+
+## Schritt 0 — Den Stand einspielen
+
+Diese Stufe bringt eine neue Abhängigkeit mit: `cryptography`, für
+AES-256-GCM. Fehlt sie, bricht der Exportbefehl schon beim Import ab. Der Weg
+ist der gewöhnliche aus „Aktualisierung" weiter unten:
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer\backend
+git pull
+.venv\Scripts\python.exe -m pip install --require-hashes -r requirements-dev.lock.txt
+.venv\Scripts\python.exe -m pip install --no-deps -e .
+```
+
+Eine Datenbankmigration gehört **nicht** dazu. Der Export liest ausschließlich;
+er legt kein Schema an und schreibt keine Zeile.
+
+## Schritt 1 — Passphrase erzeugen und ablegen
+
+Lang und zufällig, nicht ausgedacht — sie wird nie getippt, sondern kommt
+aus dem Passwortmanager:
+
+```powershell
+# 32 Bytes aus dem kryptographischen Zufallsgenerator, als Base64.
+# Das Ergebnis in den Passwortmanager, und nur dorthin.
+$bytes = [byte[]]::new(32)
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rng.GetBytes($bytes)
+$rng.Dispose()
+if (-not ($bytes | Where-Object { $_ -ne 0 })) {
+    throw "Der Zufallsgenerator hat nichts geliefert -- nichts uebernehmen."
+}
+[Convert]::ToBase64String($bytes)
+```
+
+**Nicht `RandomNumberGenerator::Fill`.** Die statische Methode gibt es erst ab
+.NET Core 2.1; Windows PowerShell 5.1 laeuft auf dem .NET Framework und kennt
+sie nicht. Der Aufruf scheitert dort, laesst das Byte-Array unberuehrt --
+und die naechste Zeile kodiert dann pflichtschuldig 32 Nullbytes zu einer
+Zeichenfolge, die wie eine Passphrase aussieht (`AAAA...=`). Genau deshalb
+steht die Pruefung darueber im Block: Ein Fehlschlag soll abbrechen und nicht
+etwas Brauchbares vortaeuschen. `Create()` und `GetBytes()` gibt es in beiden
+Welten.
+
+**Nicht `Get-Random`.** Der zieht aus `System.Random` — einem Generator für
+Simulationen, nicht für Geheimnisse. Für eine Passphrase, die das einzige
+Schloss vor den Daten ist, ist der Unterschied der ganze Punkt. Wer den
+Passwortmanager selbst erzeugen lässt, ist ebenso richtig bedient.
+
+Danach in die `.env` im Projektwurzelverzeichnis, zu den übrigen
+`ATA_`-Werten:
+
+```
+ATA_DASHBOARD_EXPORT_PASSPHRASE=<die erzeugte Zeichenfolge>
+```
+
+**Wer sie verliert, verliert die Anzeige, nicht die Daten** — die liegen in
+der Datenbank auf dem Server. Ein Wechsel der Passphrase schreibt den ganzen
+Datenbaum neu; die alten Dateien verschwinden dabei.
+
+## Schritt 2 — Die Oberfläche im Zero-Knowledge-Modus bauen
+
+Das ist ein **anderer Build** als der aus Stufe J: Er nimmt ausschließlich
+Chiffrat an und kennt keine API. Das Verfahren ist Eigenschaft des Builds und
+steht in keiner Datei, die neben den Daten liegt — wer beim Anbieter
+schreiben darf, kann damit keinen Klartextmodus einschalten.
+
+```powershell
+cd C:\...\frontend
+$env:NEXT_PUBLIC_DATENMODUS = "verschluesselt"
+npm run build
+Remove-Item Env:\NEXT_PUBLIC_DATENMODUS
+```
+
+**Beide Builds landen in demselben `frontend\out`** — Next kennt nur dieses
+eine Ausgabeverzeichnis. Genau daraus liefert der Dienst aus Stufe J das
+LAN-Dashboard aus. Wer hier baut, überschreibt es also; der
+Zero-Knowledge-Build fände im eigenen Netz keine API und zeigte nur die
+Passphrase-Abfrage.
+
+Deshalb: das Ergebnis in das Verzeichnis kopieren, das später hinausgeht,
+und den LAN-Build sofort wiederherstellen.
+
+```powershell
+New-Item -ItemType Directory -Force ..\var\dashboard | Out-Null
+Copy-Item -Recurse -Force out\* ..\var\dashboard\
+npm run build          # ohne die Variable -- das ist wieder der LAN-Build
+```
+
+In dasselbe `var\dashboard` schreibt Schritt 3 gleich den Datenbaum unter
+`data\`. Der Exportschritt fasst dabei **nur** `data\` an — die Oberfläche
+daneben bleibt unberührt, und beides zusammen ist genau das, was später als
+ein Deployment hinaufginge.
+
+Sobald der Weg nach draußen steht, gehört das in ein Skript; solange die
+Entscheidung aussteht, ist es Handarbeit unter Aufsicht.
+
+## Schritt 3 — Den Datenbaum schreiben
+
+```powershell
+cd C:\...\backend
+.venv\Scripts\python.exe -m ai_trading_analyst.cli publish --directory var\dashboard
+```
+
+**Kein `--provider` nötig, und das ist Absicht.** Die Kerzen für den Chart
+kommen immer aus dem Bestand in der Datenbank, nie von einem Anbieter — der
+Export zeigt an, was gerechnet wurde, und beschafft nichts. Voraussetzung ist
+deshalb ein gefüllter Bestand aus dem Backfill. Findet der Export zu **keiner
+einzigen** Aktie eine Kursreihe, bricht er ab, statt einen Stand ohne Charts
+zu schreiben.
+
+Die Ausgabe nennt, wie viele Dateien entstanden, wie viele unverändert
+blieben und wie viele entfernt wurden. Beim ersten Mal ist alles neu; beim
+zweiten Aufruf muss **genau eine** Datei neu geschrieben werden — das
+Manifest, es trägt den Zeitpunkt.
+
+## Schritt 4 — Nachsehen, was dort liegt
+
+```powershell
+# Die Dateinamen sagen nichts:
+Get-ChildItem var\dashboard\data | Select-Object -First 5 Name, Length
+
+# Der Klartextkopf ist die einzige lesbare Datei -- er nennt Salt und
+# Rundenzahl, damit der Browser den Schluessel ableiten kann:
+Get-Content var\dashboard\data\manifest.head.json
+
+# Und keine einzige Datei enthaelt ein Symbol im Klartext:
+Select-String -Path var\dashboard\data\* -Pattern "AAPL" -List
+```
+
+**Rechnen Sie mit einer knappen Viertelstunde.** Auf dem Server gemessen
+(2026-09-09, 190 Aktien): **784 Sekunden**, rund 4 Sekunden je Aktie, 685
+Dateien, 29 MB.
+
+Der Löwenanteil ist der Validierungschart: Der Export baut ihn je Aktie neu
+— dieselbe Indikatorrechnung wie im Screener, dazu die Kandidatenprüfung an
+jedem Entscheidungspunkt — und zwar über die **gesamte** Historie im
+Bestand. `market_data.ibkr.history_duration` (1 Y) begrenzt nur den
+regelmäßigen Lückenschluss; der einmalige Tiefen-Backfill (ADR 0028) hat den
+Bestand bis 2021 gefüllt.
+
+**Nicht die Kerzen sind der Kostentreiber, sondern die Bars darunter.** Bei
+`timeframe_minutes: 195` und einer 390-Minuten-Sitzung entstehen zwei Kerzen
+je Handelstag — fünf Jahre sind rund 2.500 Kerzen, also genau so viele wie
+auf dem Entwicklungsrechner. Gelesen werden dafür aber rund **33.000 native
+15-Minuten-Bars je Aktie** aus PostgreSQL (ADR 0028), die erst zu diesen
+Kerzen aggregiert werden. Das ist der Unterschied zwischen 0,4 und 4
+Sekunden, nicht eine tiefere Historie. Verschlüsseln und Schreiben fallen
+daneben kaum ins Gewicht.
+
+**Der zweite Aufruf ist genauso teuer.** „Nur Änderungen" bezieht sich auf
+das Schreiben, nicht auf das Rechnen: Ob ein Chart sich geändert hat, weiß
+der Export erst, wenn er ihn gebaut und seine Prüfsumme gebildet hat. Das
+Inkrementelle spart Schreibvorgänge und später Übertragung — keine
+Rechenzeit. Für den Tageslauf heißt das: gut eine Viertelstunde am Ende
+jedes Laufs, jeden Tag.
+
+**Abnahmekriterien dieser Stufe:** Die letzte Suche findet nichts. Der Kopf
+nennt `PBKDF2-HMAC-SHA256`, `AES-256-GCM` und mindestens 600.000 Runden. Der
+zweite Aufruf aus Schritt 3 schreibt nur das Manifest neu. Und der
+Zustandsvermerk (`var\dashboard.zustand.json`) liegt **außerhalb** des
+Verzeichnisses, das später hochgeladen würde — er enthält die Zuordnung von
+Pfad zu Dateiname.
+
+## Schritt 4b — Einmal wirklich hineinsehen
+
+Alles bis hier beweist, dass der Baum vollständig und undurchsichtig ist. Es
+beweist **nicht**, dass ihn jemand benutzen kann. Dieser Schritt ist der
+einzige, der die beiden Hälften außerhalb der Tests zusammenbringt.
+
+Der Datenbaum liegt bereits neben der Oberfläche aus Schritt 2, beides unter
+`var\dashboard`. Es fehlt nur ein Webserver davor — die Seite lädt ihre
+Dateien per `fetch`, und das geht über `file://` nicht.
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer\var\dashboard
+..\..\backend\.venv\Scripts\python.exe -m http.server 8099 --bind 127.0.0.1
+```
+
+**`--bind 127.0.0.1` ist nicht optional.** Ohne die Angabe lauscht der
+Server auf allen Schnittstellen, die Windows-Firewall fragt nach, und aus
+einer Abnahme wird eine Netzwerkänderung. So bleibt es beim eigenen Rechner:
+keine Regel, kein offener Port nach außen, Stufe J unberührt.
+
+Dann im Browser des Servers **`http://localhost:8099/`** öffnen. Die Adresse
+ist ebenfalls nicht beliebig: `crypto.subtle` — die Entschlüsselung im
+Browser — steht nur in einem *sicheren Kontext* zur Verfügung. `localhost`
+und `127.0.0.1` gelten als sicher, die LAN-Adresse des Servers **nicht**.
+Über `http://192.168.x.x:8099` erschiene das Passphrase-Feld und die
+Entschlüsselung scheiterte an einer Stelle, die nichts mit dem Datenbaum zu
+tun hat.
+
+Am Ende `Strg+C`. Der Webserver ist für diesen Blick da und für nichts sonst.
+
+**Was zu prüfen ist:**
+
+| # | Prüfung | Erwartung |
+|---|---|---|
+| 1 | Die Seite fragt nach einer Passphrase | Nur der Zero-Knowledge-Build tut das. Erscheint stattdessen sofort ein Dashboard, liegt der LAN-Build im Verzeichnis — Schritt 2 wiederholen |
+| 2 | Eine **falsche** Passphrase eingeben | Verständliche Fehlermeldung, kein Absturz, keine leere Seite. Danach lässt sich die richtige eingeben |
+| 3 | Die richtige Passphrase, mit Blick auf die Uhr | Der Stand öffnet sich. Die Dauer ist die Schlüsselableitung — Bezugswert für AK16 |
+| 4 | Die Kopfzeile „Stand" | Nennt Datum des Laufs und Zeitpunkt des Exports. Zeigt sie einen älteren Lauf als erwartet, hat der Export einen alten Stand erwischt |
+| 5 | Die Liste „ohne Chart" in derselben Zeile | Sollte leer oder kurz sein. Stehen dort alle Aktien, kommen die Kerzen nicht aus dem Bestand (siehe Schritt 3) |
+| 6 | Eine Aktie mit Chart öffnen | Kerzen, EMA und RSI werden gezeichnet. **Einen Schlusskurs gegen die Datenbank gegenprüfen** — das ist die einzige Prüfung, die echte von plausiblen Zahlen unterscheidet |
+| 7 | Berichte und Backtests aufrufen | Dieselben Zahlen wie im LAN-Dashboard bzw. in der API |
+| 8 | Einen **neuen Tab** auf dieselbe Adresse öffnen | Fragt erneut nach der Passphrase. Sie wird bewusst nirgends abgelegt |
+| 9 | Entwicklerwerkzeuge, Reiter „Netzwerk", Seite neu laden | Die angeforderten Dateinamen sind Hexfolgen ohne Bezug zum Symbol, die Antworten sind Binärdaten. Kein einziger lesbarer JSON-Körper außer `manifest.head.json` |
+| 10 | Reiter „Konsole" | Keine Fehler |
+
+**Abnahmekriterium dieser Stufe:** Prüfung 6 und Prüfung 9 zusammen. Die
+erste zeigt, dass echte Daten ankommen; die zweite, dass unterwegs nichts
+davon lesbar war.
+
+Was hier **nicht** geprüft werden kann, ist AK16: die Dauer auf dem
+Smartphone. Dazu müsste der Baum erreichbar sein, und das ist er erst mit
+einem Anbieter.
+
+## Schritt 5 — Im Tageslauf einschalten (erst nach Schritt 4)
+
+In `config/default.yaml` unter `dashboard_export` das Ziel eintragen
+(`directory: var/dashboard`); **geschaltet wird über die Aufgabenplanung**,
+wie bei den Anbietern auch. Dem Eintrag aus Stufe F kommt dafür ein Argument
+hinzu:
+
+```
+--dashboard-export directory
+```
+
+Danach schreibt der Tageslauf den Baum am Ende jedes Laufs selbst. Ein
+Fehlschlag hält den Lauf nicht an — er kommt als eigene Telegram-Meldung
+„Dashboard nicht aktualisiert" und steht im Protokoll.
+
+**Das ist zugleich der Notausschalter:** `--dashboard-export none` in der
+Aufgabenplanung, speichern, fertig. Der Tageslauf läuft weiter, nur der
+Snapshot bleibt aus. Die Konfigurationsdatei wird dafür nicht angefasst — sie
+ist im öffentlichen Repository versioniert.
+
+**Was hier ausdrücklich noch nicht steht:** Anbieterwahl, Konto, Token,
+Zugriffsregel, Upload und die Notfallkarte dazu. Das ist Gegenstand des
+Proof of Concept aus Abschnitt 11 des
+[Spike-Berichts](requirements/f12-externes-hosting-spike.md) und kommt in
+diese Stufe, sobald ADR 0060 angenommen ist.
+
+---
+
 # Laufender Betrieb
 
 ## Betriebszustand
@@ -1040,6 +1298,10 @@ automatischen Tageslauf, nur manuell gestartete.
 (Stufe J), auf dem Server aber noch nicht eingerichtet. Diese Zeile wird
 umgeschrieben, sobald er dort steht — bis dahin gibt es genau einen
 geplanten Vorgang, den Tageslauf.
+
+**Der Export nach draußen ebenfalls nicht** (Stufe K). Er ist gebaut und
+getestet, `dashboard_export.target` steht auf `none`, und die Entscheidung
+darüber steht aus.
 
 ## Nach jedem Serverneustart
 

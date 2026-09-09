@@ -175,6 +175,38 @@ denselben Zweck.
 - **Keine Endpunkte für Kerzen, Watchlisten oder Backtests** als eigene
   Ressourcen. Was das Dashboard davon braucht, steht bereits im Bericht.
 
+## Dieselben Antworten als Dateien
+
+Für das Dashboard außerhalb des Servers gibt es **keine zweite API**, sondern
+denselben Vertrag in anderer Form: einen Datenbaum aus Dateien, den der
+Server nach jedem Lauf schreibt
+([ADR 0060](adr/0060-dashboard-ausserhalb-des-servers.md), vorgeschlagen —
+die Annahme hängt an einem Proof of Concept).
+
+Jede Datei enthält die Antwort **eines** der oben beschriebenen Endpunkte,
+und zwar aus demselben Code: Der Zusammenbau steht seither in
+`presentation/api/views.py`, den die Router und der Exportschritt
+gleichermaßen aufrufen. Zwei Umsetzungen derselben Antwort liefen sonst
+auseinander, und niemand fände die Stelle.
+
+Drei Abweichungen, alle aus der Bauart des Ziels und alle bewusst:
+
+- **Die beiden paginierten Listen liegen vollständig als Datei.** Draußen
+  gibt es keinen Server, der eine Seite schneidet; das tut der Browser.
+  `limit` und `offset` gelten dort unverändert, `total` zählt nach dem
+  Filtern — wie `count(status=…)`.
+- **Je Aktie liegt nur die jüngste Messung des Optionsbacktests.** Der
+  Abfrageparameter `measurement_id` hat draußen kein Gegenstück; wird eine
+  ältere angefordert, meldet die Oberfläche das, statt stillschweigend die
+  jüngste zu zeigen. Ältere als eigene Dateien wären ein späterer Zusatz.
+- **Ein Manifest kommt hinzu**, das es als Endpunkt nicht gibt: Zeitpunkt
+  und Kennung des Exports, der zugehörige Lauf, die Versionen, die Zuordnung
+  von Symbol zu dateisicherem Namen und je Pfad die Prüfsumme des Inhalts.
+  Es ist Pflichtanzeige der Oberfläche — ein alter Stand muss alt aussehen.
+
+Fehler sehen dort anders aus, weil es kein HTTP gibt: Eine fehlende Datei
+ist ein Fehler und keine leere Liste — dieselbe Zusage wie beim `404`.
+
 ## OpenAPI
 
 FastAPI erzeugt die Beschreibung selbst; sie liegt unter `/openapi.json`,

@@ -870,6 +870,42 @@ class NotificationsConfig(_Section):
     telegram: TelegramConfig = TelegramConfig()
 
 
+class DashboardExportConfig(_Section):
+    """Der Snapshot des Dashboards fuer ausserhalb des Servers (ADR 0060).
+
+    Ausgeliefert steht ``target`` auf ``none``: Ein frisch aufgesetzter
+    Server exportiert nichts, bis jemand es einschaltet -- dasselbe Muster
+    wie bei den Anbietern (ADR 0036, Punkt 4).
+
+    ``encrypt`` ist bewusst ein eigener Schalter und nicht aus der Frage
+    abgeleitet, ob eine Passphrase gesetzt ist. Waere es abgeleitet, machte
+    ein Tippfehler im Namen der Umgebungsvariablen aus Stufe 2 stillschweigend
+    Stufe 1 -- und der naechste Lauf legte Berichte, Kurse und Symbole im
+    Klartext beim Anbieter ab. So fehlt stattdessen ein Geheimnis, und der
+    Export bricht mit einer eindeutigen Meldung ab.
+    """
+
+    target: Literal["none", "directory"] = "none"
+    """``directory`` schreibt den Baum an einen Ort im Dateisystem. Ein
+    Anbieterziel gibt es erst, wenn der Proof of Concept einen bestaetigt
+    hat (ADR 0060, Entscheidung Punkt 10) -- vorher waere es geraten."""
+
+    directory: str | None = None
+    """Wohin der Datenbaum geschrieben wird."""
+
+    state_file: str | None = None
+    """Wo der Zustand liegt (Hash je Pfad, Salt, Baumkennung).
+
+    **Ausserhalb des Datenbaums.** Er enthaelt in Stufe 2 die Zuordnung von
+    Pfad zu opakem Namen -- genau das, was der Anbieter nicht sehen soll.
+    Ohne Angabe liegt er neben dem Verzeichnis, nicht darin.
+    """
+
+    encrypt: bool = True
+    pbkdf2_iterations: PositiveInt = 600_000
+    """Mindestens 600.000 (ADR 0060, Punkt 6); der Browser prueft es erneut."""
+
+
 class SwingWeightsConfig(_Section):
     """Gewichte der sechs Swing-Komponenten (ADR 0041).
 
@@ -1064,6 +1100,7 @@ class AppConfig(_Section):
     data_availability: DataAvailabilityConfig = DataAvailabilityConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     notifications: NotificationsConfig = NotificationsConfig()
+    dashboard_export: DashboardExportConfig = DashboardExportConfig()
     scoring: ScoringConfig = ScoringConfig()
     logging: LoggingConfig = LoggingConfig()
     indicators: IndicatorConfig | None = None
@@ -1146,6 +1183,14 @@ class Secrets(BaseSettings):
     llm_api_key: SecretStr | None = None
     market_data_api_key: SecretStr | None = None
     notification_token: SecretStr | None = None
+    dashboard_export_passphrase: SecretStr | None = None
+    """Die Passphrase, mit der der Datenbaum verschluesselt wird (ADR 0060,
+    Stufe 2). Dieselbe steht im Passwortmanager des Inhabers; sie ist das
+    zweite Schloss hinter der Anmeldung an der Kante.
+
+    Lang und zufaellig erzeugt, nicht gemerkt -- so entschieden am
+    2026-09-07 (offene Frage O8). Der Server braucht sie zum Schreiben, der
+    Browser zum Lesen; zum Anbieter geht sie nie."""
     finnhub_api_key: SecretStr | None = None
     edgar_contact: SecretStr | None = None
     """Die Kontaktadresse, die die SEC im ``User-Agent`` verlangt, damit sie

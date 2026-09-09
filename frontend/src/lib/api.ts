@@ -1,13 +1,39 @@
-// Der einzige Ort, an dem das Dashboard die API kennt.
+// Der einzige Ort, an dem das Dashboard weiss, woher seine Daten kommen.
 //
 // Hier steht keine Fachlogik (Doc 12): Die Typen bilden ab, was die
 // Endpunkte liefern, und die Funktionen holen es. Gerechnet, bewertet und
 // eingestuft wird ausschliesslich im Backend.
+//
+// **Zwei Herkuenfte, eine Oberflaeche** (ADR 0060). Im eigenen Netz liest
+// das Dashboard die lesende API des Servers. Ausserhalb gibt es keine API:
+// Dort liegt ein Datenbaum aus Dateien, den der Server nach jedem Lauf
+// hinaufgeladen hat. Jede Funktion unten nennt deshalb beide Wege
+// nebeneinander -- der zweite steht sichtbar neben dem ersten, statt in
+// einer Umschreibung von Pfaden versteckt zu sein, die niemand mehr mit dem
+// Endpunkt vergleichen kann.
+
+import { datenmodus, type Datenbaum } from './datenbaum';
 
 const BASIS = process.env.NEXT_PUBLIC_API_BASE ?? '';
 // Leer im Betrieb: Dashboard und API kommen aus demselben Prozess und damit
 // von derselben Herkunft (ADR 0052). Nur `next dev` braucht die Variable,
 // weil dort zwei Ports im Spiel sind.
+
+let offenerBaum: Datenbaum | null = null;
+
+/** Meldet den geoeffneten Datenbaum an -- Aufgabe von `Datenzugang`. */
+export function setzeDatenbaum(baum: Datenbaum | null): void {
+  offenerBaum = baum;
+}
+
+function baum(): Datenbaum {
+  if (offenerBaum === null) {
+    // Kein stiller Ersatz: Ohne geoeffneten Stand gibt es nichts anzuzeigen,
+    // und eine leere Liste behauptete, es gebe nichts.
+    throw new Error('Der Stand ist noch nicht geoeffnet.');
+  }
+  return offenerBaum;
+}
 
 export interface Page<T> {
   items: T[];
@@ -100,7 +126,10 @@ export class ApiError extends Error {
   }
 }
 
-async function holen<T>(pfad: string): Promise<T> {
+async function holen<T>(pfad: string, ausDemBaum: (baum: Datenbaum) => Promise<T>): Promise<T> {
+  if (datenmodus() !== 'api') {
+    return await ausDemBaum(baum());
+  }
   const antwort = await fetch(`${BASIS}${pfad}`);
   if (!antwort.ok) {
     // Ausdruecklich werfen statt einen Ersatzwert zurueckzugeben: Eine
@@ -109,6 +138,16 @@ async function holen<T>(pfad: string): Promise<T> {
     throw new ApiError(antwort.status, pfad);
   }
   return (await antwort.json()) as T;
+}
+
+function seite<T>(alle: T[], optionen: { limit?: number; offset?: number }): Page<T> {
+  // Dieselben Voreinstellungen wie die API (limit 25, offset 0). Geblaettert
+  // wird ausserhalb im Browser: Die Listen sind klein -- ein Lauf je
+  // Handelstag --, und eine zweite Seitenlogik im Export waere eine zweite
+  // Wahrheit ueber dieselbe Reihenfolge.
+  const limit = optionen.limit ?? 25;
+  const offset = optionen.offset ?? 0;
+  return { items: alle.slice(offset, offset + limit), total: alle.length, limit, offset };
 }
 
 export function listRuns(
@@ -120,7 +159,13 @@ export function listRuns(
   // Mehrfach derselbe Name: So nimmt die API eine Liste von Status entgegen.
   for (const status of optionen.status ?? []) suche.append('status', status);
   const anhang = suche.size > 0 ? `?${suche.toString()}` : '';
-  return holen<Page<AnalysisRun>>(`/api/v1/analysis-runs${anhang}`);
+  return holen<Page<AnalysisRun>>(`/api/v1/analysis-runs${anhang}`, async (baum) => {
+    const alle = await baum.lade<AnalysisRun[]>('data/analysis-runs.json');
+    const erlaubt = optionen.status;
+    const gefiltert =
+      erlaubt === undefined ? alle : alle.filter((lauf) => erlaubt.includes(lauf.status));
+    return seite(gefiltert, optionen);
+  });
 }
 
 // Was "erfolgreich" heisst, entscheidet nicht die Oberflaeche: Ein Lauf, bei
@@ -131,15 +176,21 @@ export function listRuns(
 export const ERFOLGREICH: readonly RunStatus[] = ['COMPLETED', 'PARTIALLY_COMPLETED'];
 
 export function getRun(runId: string): Promise<AnalysisRunDetail> {
-  return holen<AnalysisRunDetail>(`/api/v1/analysis-runs/${runId}`);
+  return holen<AnalysisRunDetail>(`/api/v1/analysis-runs/${runId}`, (baum) =>
+    baum.lade<AnalysisRunDetail>(`data/analysis-runs/${runId}.json`),
+  );
 }
 
 export function listRunReports(runId: string): Promise<ReportSummary[]> {
-  return holen<ReportSummary[]>(`/api/v1/analysis-runs/${runId}/reports`);
+  return holen<ReportSummary[]>(`/api/v1/analysis-runs/${runId}/reports`, (baum) =>
+    baum.lade<ReportSummary[]>(`data/analysis-runs/${runId}/reports.json`),
+  );
 }
 
 export function getReport(reportId: string): Promise<ReportDocument> {
-  return holen<ReportDocument>(`/api/v1/reports/${reportId}`);
+  return holen<ReportDocument>(`/api/v1/reports/${reportId}`, (baum) =>
+    baum.lade<ReportDocument>(`data/reports/${reportId}.json`),
+  );
 }
 
 export function listStockReports(
@@ -152,6 +203,12 @@ export function listStockReports(
   const anhang = suche.size > 0 ? `?${suche.toString()}` : '';
   return holen<Page<ReportSummary>>(
     `/api/v1/stocks/${encodeURIComponent(symbol)}/reports${anhang}`,
+    async (baum) => {
+      const alle = await baum.lade<ReportSummary[]>(
+        `data/stocks/${baum.verzeichnis(symbol)}/reports.json`,
+      );
+      return seite(alle, optionen);
+    },
   );
 }
 
@@ -300,11 +357,15 @@ export interface Chartdaten {
 }
 
 export function listMessungen(): Promise<Messung[]> {
-  return holen<Messung[]>('/api/v1/options-backtests');
+  return holen<Messung[]>('/api/v1/options-backtests', (baum) =>
+    baum.lade<Messung[]>('data/options-backtests.json'),
+  );
 }
 
 export function getMessung(messungId: string): Promise<Messungsdetail> {
-  return holen<Messungsdetail>(`/api/v1/options-backtests/${messungId}`);
+  return holen<Messungsdetail>(`/api/v1/options-backtests/${messungId}`, (baum) =>
+    baum.lade<Messungsdetail>(`data/options-backtests/${messungId}.json`),
+  );
 }
 
 export function getAktienBacktest(
@@ -314,9 +375,27 @@ export function getAktienBacktest(
   const anhang = messungId === undefined ? '' : `?measurement_id=${messungId}`;
   return holen<AktienBacktest>(
     `/api/v1/stocks/${encodeURIComponent(symbol)}/backtest${anhang}`,
+    async (baum) => {
+      const backtest = await baum.lade<AktienBacktest>(
+        `data/stocks/${baum.verzeichnis(symbol)}/backtest.json`,
+      );
+      // Der Export enthaelt je Aktie **die juengste** Messung (Spike-Bericht
+      // 8.2). Eine aeltere anzufordern und stillschweigend die juengste zu
+      // bekommen waere die schlimmere Antwort: Die Zahlen saehen richtig aus
+      // und gehoerten zu einer anderen Messung.
+      if (messungId !== undefined && backtest.measurement?.measurement_id !== messungId) {
+        throw new Error(
+          'Ausserhalb des Servers liegt je Aktie nur die juengste Messung. ' +
+            'Aeltere Messungen sind im Dashboard im eigenen Netz zu sehen.',
+        );
+      }
+      return backtest;
+    },
   );
 }
 
 export function getChart(symbol: string): Promise<Chartdaten> {
-  return holen<Chartdaten>(`/api/v1/stocks/${encodeURIComponent(symbol)}/chart`);
+  return holen<Chartdaten>(`/api/v1/stocks/${encodeURIComponent(symbol)}/chart`, (baum) =>
+    baum.lade<Chartdaten>(`data/stocks/${baum.verzeichnis(symbol)}/chart.json`),
+  );
 }
