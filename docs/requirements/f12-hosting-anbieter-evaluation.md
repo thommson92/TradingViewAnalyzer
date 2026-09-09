@@ -154,6 +154,68 @@ lautet nicht „AWS oder Cloudflare", sondern: **Soll die Anmeldung an der
 Kante MFA über einen Identitätsanbieter sein (dann Cloudflare), oder genügt
 ein zweites, geteiltes Passwort vor dem Chiffrat (dann AWS)?**
 
+### Nachgefragt: S3-Website-Hosting mit Passwort auf der Seite selbst
+
+Vorschlag des Inhabers: den Bucket als Website ausliefern und die Anmeldung
+auf der Seite erledigen — „so wie es gerade auf dem Windows-Server läuft".
+
+**Erstens: Das ist, richtig gemacht, bereits gebaut.** Die Passphrase-Abfrage
+in `Datenzugang.tsx` *ist* ein Passwort auf der Seite selbst. Der Vorschlag
+ist damit kein dritter Weg, sondern die Frage, ob die Anmeldung an der
+Kante zusätzlich nötig ist.
+
+**Zweitens: Es ist etwas anderes als die Anmeldung auf dem Server, und der
+Unterschied ist der ganze Punkt.** Auf dem Windows-Server prüft FastAPI das
+Passwort, setzt ein signiertes Sitzungs-Cookie und **hält die Daten
+zurück**, solange es fehlt. Ein Bucket hält nichts zurück: Er liefert
+Objekte an jeden aus, der die Adresse kennt. Eine Anmeldemaske im Browser
+könnte niemandem etwas verweigern — sie liefe im selben JavaScript, das der
+Besucher kontrolliert.
+
+Daraus folgt eine Regel, die keine Ausnahme verträgt: **Die
+Sitzungsanmeldung des Servers darf im statischen Build nicht nachgebaut
+werden.** Sie sähe aus wie Schutz, wäre keiner, und sie verführte dazu,
+dahinter Klartext abzulegen. Was auf statischem Hosting schützt, ist
+ausschließlich die Verschlüsselung — nicht eine Entscheidung, die niemand
+trifft. Deshalb steht in 8.3 „kein eigenes Anmeldeformular, kein eigener
+Sitzungscode", und deshalb bleibt `ATA_SESSION_SECRET` reserviert.
+
+**Drittens, und das entscheidet die Frage: Der Website-Endpunkt eines
+Buckets spricht nur HTTP.** Ohne TLS liefert er auch **das JavaScript**
+unauthentifiziert aus — und dieses JavaScript nimmt die Passphrase
+entgegen und leitet den Schlüssel ab. Wer auf dem Weg sitzt (fremdes WLAN,
+Hotelnetz, Mobilfunk-Zwischenstelle), tauscht es aus und bekommt die
+Passphrase geschenkt. Damit ist nicht ein Stand kompromittiert, sondern
+**jeder je exportierte**, denn alle stehen unter demselben Schlüssel.
+
+Zero-Knowledge trägt nur, solange die **Auslieferung des Codes**
+authentifiziert ist. Das ist keine Härtung, das ist die Voraussetzung. Der
+REST-Endpunkt des Buckets kann zwar HTTPS, kennt aber keine
+Index-Dokumente — der statische Export mit `trailingSlash: true` verlangt,
+dass `/aktie/` zu `/aktie/index.html` wird. Es läuft also auf CloudFront
+hinaus, und „S3 Static Website Hosting" als eigenständige Antwort löst sich
+damit auf.
+
+**Was bleibt, wenn man auf die Kantenanmeldung verzichtet** (S3 + CloudFront,
+nur Passphrase):
+
+- Das Chiffrat ist **öffentlich abrufbar**. Ein Angreifer lädt alle 685
+  Dateien und rechnet **offline** gegen die Passphrase, mit eigener
+  Hardware und ohne Zeitdruck. 600.000 Runden PBKDF2 verteuern das, aber
+  die Passphrase ist dann die **einzige** Verteidigung. Sie hält — weil sie
+  32 zufällige Bytes aus dem Passwortmanager ist (O8). Wäre sie ausgedacht,
+  wäre dieser Weg fahrlässig.
+- Dateizahl, Größenklassen und **Änderungszeitpunkte** sieht nicht mehr nur
+  der Anbieter, sondern jeder (R1).
+- Kein Anmeldeprotokoll, keine Ratenbegrenzung, kein „überall abmelden"
+  (K5, Kriterium 9).
+- Dass es die Seite gibt, ist öffentlich. Nichtssagender Name, `robots.txt`
+  und `noindex` (T9) sind dann die einzige Deckung.
+
+Das ist genau die Spalte **H3 allein** der Entscheidungsmatrix: `−` bei der
+Authentifizierung, `+` statt `++` beim Schutz vor Datenabfluss durch
+Fehlkonfiguration.
+
 ## Empfehlung: Cloudflare Pages mit Cloudflare Access
 
 **Warum.** Es ist der einzige Bewerber, der Anforderung B sauber erfüllt:
