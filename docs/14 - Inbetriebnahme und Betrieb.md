@@ -1277,6 +1277,235 @@ diese Stufe, sobald ADR 0060 angenommen ist.
 
 ---
 
+# Stufe L — Der Weg nach draußen: Cloudflare Pages mit Access
+
+**Noch nicht abgenommen.** Diese Stufe setzt die Anbieterentscheidung um
+([Anbieterevaluation](requirements/f12-hosting-anbieter-evaluation.md),
+2026-09-09: Cloudflare Pages mit Cloudflare Access). Sie ist zugleich
+Phase 2 des Proof of Concept aus Abschnitt 11 des
+[Spike-Berichts](requirements/f12-externes-hosting-spike.md) — erst wenn sie
+durch ist, kann ADR 0060 angenommen werden.
+
+**Die Reihenfolge ist hier die halbe Sicherheit.** Der Datenbaum geht als
+Letztes hinauf. Vorher steht eine Attrappe dort, und an ihr wird geprüft,
+ob die Zugriffsregel wirklich greift. Wer zuerst hochlädt und dann absichert,
+hat den Stand in der Zwischenzeit öffentlich stehen — und was einmal
+abgerufen wurde, holt keine Regel zurück.
+
+**Keine Geheimnisse in den Chat.** Passphrase, API-Token und
+Wiederherstellungscodes bleiben im Passwortmanager. Für Rückfragen genügt
+immer die Fehlermeldung ohne den Wert.
+
+## Schritt 1 — Ein eigenes Cloudflare-Konto
+
+**Ein neues Konto, nicht ein vorhandenes.** Der Grund steht in der
+Anbieterevaluation: Das Recht `Cloudflare Pages: Edit` gilt **kontoweit**
+und lässt sich nicht auf ein Projekt einengen. In einem Konto, das nur
+dieses eine Projekt enthält, sind „kontoweit" und „projektweit" dasselbe —
+ein gestohlenes Token kostet dann nichts außerhalb dieses Dashboards.
+Liegen dort auch andere Domains, kostet es die.
+
+Beim ersten Aufruf von **Zero Trust** verlangt Cloudflare einen
+**Teamnamen**; daraus wird `<team>.cloudflareaccess.com`, und dort landet
+die Anmeldemaske. Der Name gehört deshalb zu T9: **nichtssagend**, kein
+Bezug zu Trading, Börse, Aktien oder zum eigenen Namen. Er lässt sich
+später nur mit Mühe ändern.
+
+Wählen Sie den **Free**-Tarif von Zero Trust. Er deckt 50 Nutzer; gebraucht
+wird einer.
+
+## Schritt 2 — Identitätsanbieter festlegen (offene Frage O3)
+
+Access braucht eine Stelle, die die Anmeldung durchführt. Eingebaut ist
+**One-time PIN** — ein Einmalcode per E-Mail. Entscheidung **E2** wollte
+das ausdrücklich nur als Rückfall, weil damit das E-Mail-Postfach der
+einzige Faktor ist.
+
+**Vorschlag: GitHub als Identitätsanbieter.** Das Konto existiert bereits
+(dasselbe, in dem dieses Repository liegt), es kann Passkeys und
+Authenticator-App, und es entsteht keine neue Identität, die gepflegt
+werden muss. In Zero Trust unter *Settings → Authentication → Login
+methods → Add new → GitHub*.
+
+**Was man dabei wissen sollte:** Damit hängen Repository und Dashboard an
+demselben Konto. Wer es übernimmt, hat beides. Das Repository ist
+öffentlich und das Dashboard Chiffrat — der Schaden ist begrenzt, aber die
+Kopplung ist real. Wer sie nicht will, nimmt ein zweites Konto bei einem
+Identitätsanbieter; dann ist O3 damit beschieden.
+
+**Vor dem nächsten Schritt:** Zwei-Faktor-Anmeldung im gewählten Konto
+prüfen und die Wiederherstellungscodes in den Passwortmanager legen. Ohne
+sie sperrt ein verlorenes Telefon das Dashboard dauerhaft aus.
+
+## Schritt 3 — Das Pages-Projekt anlegen, mit einer Attrappe
+
+Der Projektname wird zu `<projekt>.pages.dev` und ist damit öffentlich
+sichtbar — **nichtssagend wählen** (E6, T9). Etwas wie `mst-7f3a`, nicht
+`ata-dashboard`.
+
+Auf dem Server, in einem leeren Verzeichnis:
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer
+New-Item -ItemType Directory -Force var\attrappe | Out-Null
+Set-Content var\attrappe\index.html "<h1>leer</h1>"
+
+cd var\attrappe
+npx wrangler login
+npx wrangler pages project create <projekt> --production-branch main
+npx wrangler pages deploy . --project-name <projekt> --branch main --commit-dirty true
+```
+
+`wrangler login` öffnet den Browser und meldet interaktiv an — für diesen
+Schritt ist das richtig; das Token kommt erst in Schritt 5, wenn der
+Server ohne Aufsicht hochlädt.
+
+Die Ausgabe nennt zwei Adressen: die des Deployments
+(`<hash>.<projekt>.pages.dev`) und die des Projekts
+(`<projekt>.pages.dev`). **Beide notieren.** Sie sind der Gegenstand des
+nächsten Schritts.
+
+## Schritt 4 — Die Zugriffsregel, und die Falle darin
+
+**Hier wird am häufigsten falsch abgebogen.** Im Pages-Projekt unter
+*Settings → Enable access policy* gibt es einen Schalter. Er legt eine
+Access-Anwendung an — **aber nur für die Vorschau-Deployments**
+(`*.<projekt>.pages.dev`). Der Produktivname `<projekt>.pages.dev` bleibt
+davon **unberührt und öffentlich**. Wer nur diesen Schalter setzt, hat den
+Datenbaum offen im Netz und ein gutes Gefühl.
+
+Es braucht deshalb **zwei** Anwendungen:
+
+1. **Vorschau:** der Schalter im Pages-Projekt. Er erzeugt die Anwendung
+   für `*.<projekt>.pages.dev`.
+2. **Produktiv:** in Zero Trust unter *Access → Applications → Add an
+   application → Self-hosted* eine zweite Anwendung. Unter **Public
+   hostname** im Feld **Subdomain** das Sternchen **löschen**, sodass genau
+   `<projekt>.pages.dev` dort steht.
+
+Für beide Anwendungen dieselbe Richtlinie: Action **Allow**, Include →
+**Emails** → genau die eine Adresse (P1: genau ein erlaubter Nutzer).
+Session Duration auf **24 Stunden** (8.3). Als Login method nur den in
+Schritt 2 gewählten Anbieter zulassen — steht One-time PIN daneben offen,
+ist die Anmeldung so stark wie das schwächere von beidem.
+
+### Die Prüfung, ohne die dieser Schritt nichts wert ist
+
+**Ein privates Fenster, und beide Adressen einzeln:**
+
+```
+https://<projekt>.pages.dev
+https://<hash>.<projekt>.pages.dev
+```
+
+Erwartet wird **beide Male** die Anmeldemaske unter
+`<team>.cloudflareaccess.com`, nicht die Attrappe. Wer stattdessen
+`<h1>leer</h1>` sieht, hat eine ungeschützte Adresse gefunden — dann fehlt
+eine der beiden Anwendungen, und der nächste Schritt darf nicht stattfinden.
+
+Zusätzlich vom Smartphone, aus dem Mobilfunknetz: Auch dort erst die
+Anmeldung, danach die Attrappe. Das prüft nebenbei, ob die Anmeldung auf
+dem Gerät überhaupt praktikabel ist.
+
+**Abnahmekriterium dieses Schritts:** Keine der beiden Adressen liefert
+Inhalt ohne vorherige Anmeldung — geprüft in einem Fenster, das keine
+Sitzung mitbringt.
+
+## Schritt 5 — Das Token für den Server
+
+Erst jetzt, und mit möglichst wenig Rechten. In der Cloudflare-Konsole
+unter *My Profile → API Tokens → Create Token → Create Custom Token*:
+
+- Permissions: **Account → Cloudflare Pages → Edit**
+- Account Resources: **Include → dieses eine Konto**
+- TTL: ein Ablaufdatum setzen, damit ein vergessenes Token nicht ewig gilt
+
+Das Token erscheint **genau einmal**. In den Passwortmanager, dann in die
+`.env` im Projektwurzelverzeichnis:
+
+```
+ATA_DASHBOARD_PUBLISH_TOKEN=<das Token>
+CLOUDFLARE_ACCOUNT_ID=<die Konto-Kennung aus der Konsole>
+```
+
+`wrangler` liest `CLOUDFLARE_API_TOKEN` und `CLOUDFLARE_ACCOUNT_ID` aus der
+Umgebung. Solange der Upload von Hand läuft, wird das Token beim Aufruf
+gesetzt; der spätere Exportschritt bekommt es über `ATA_`-Namen wie alle
+anderen Geheimnisse auch.
+
+**Was das Token nicht kann, und das ist der Punkt:** Es darf Deployments
+anlegen und löschen. Es darf die Access-Anwendungen **nicht** anfassen. Wer
+es stiehlt, kann den Inhalt ersetzen — nicht die Anmeldung davor abschalten
+(N19).
+
+## Schritt 6 — Den echten Datenbaum hochladen
+
+Erst wenn Schritt 4 sauber durchgelaufen ist.
+
+```powershell
+cd C:\Users\Administrator\Documents\TradingViewAnalyzer
+$env:CLOUDFLARE_API_TOKEN = "<Token aus dem Passwortmanager>"
+$env:CLOUDFLARE_ACCOUNT_ID = "<Konto-Kennung>"
+
+cd var\dashboard
+npx wrangler pages deploy . --project-name <projekt> --branch main --commit-dirty true
+
+Remove-Item Env:\CLOUDFLARE_API_TOKEN
+```
+
+`var\dashboard` enthält seit Stufe K beides: die Oberfläche im
+Zero-Knowledge-Build und darunter `data\` mit dem verschlüsselten Baum.
+Der Zustandsvermerk liegt außerhalb und geht **nicht** mit hinauf — das ist
+in Stufe K geprüft worden und bleibt hier richtig.
+
+Rechnen Sie beim ersten Mal mit rund 30 MB.
+
+**Abnahmekriterien:** Nach der Anmeldung erscheint das Dashboard, die
+Passphrase öffnet den Stand, und ein Chart zeigt echte Kurse (dieselben
+Prüfungen wie in Stufe K, Schritt 4b — nur diesmal über das Netz). Im
+Reiter *Netzwerk* stehen weiterhin nur opake Dateinamen und Binärantworten.
+
+## Schritt 7 — Alte Deployments entfernen
+
+**Nicht optional, und der Grund ist die Konstruktion des Datenbaums.** Alle
+je hochgeladenen Fassungen sind unter **demselben** Schlüssel verschlüsselt
+(stabiles Salt, siehe ADR 0060, Nachtrag vom 2026-09-08). Eine unbegrenzte
+Deployment-Historie ist deshalb kein Altlastenproblem, sondern ein
+wachsendes Archiv, das eine einzige verlorene Passphrase vollständig
+aufschließt. Vorschau-Adressen bleiben dauerhaft erreichbar, bis das
+Deployment gelöscht ist.
+
+```powershell
+npx wrangler pages deployment list --project-name <projekt>
+npx wrangler pages deployment delete <deployment-id> --project-name <projekt>
+```
+
+Der jüngste Stand eines Zweigs lässt sich nicht löschen — gemeint ist die
+Historie dahinter, nicht der aktuelle Stand. Ab hundert Deployments wird
+auch das Löschen des Projekts schwierig; einmal im Monat aufräumen genügt,
+solange von Hand hochgeladen wird. Sobald der Exportschritt den Upload
+übernimmt, gehört das Aufräumen in denselben Schritt.
+
+## Schritt 8 — Die Notfallkarte
+
+In den Passwortmanager, neben die Passphrase, in dieser Reihenfolge:
+
+| Lage | Handgriff |
+|---|---|
+| Verdacht auf Datenabfluss | Access-Anwendungen auf **Allow: niemand** stellen — wirkt sofort und braucht keinen Upload |
+| Token verloren | Token in der Konsole widerrufen; der Inhalt draußen bleibt, die Anmeldung davor ebenfalls |
+| Passphrase verloren | Neue erzeugen, `.env` ändern, `cli publish --full`, danach **alle** alten Deployments löschen — sonst bleibt der alte Schlüssel gültig |
+| Alles abschalten | Pages-Projekt löschen (`npx wrangler pages project delete <projekt> --yes`); der Server merkt davon nichts |
+| Server soll nicht mehr exportieren | `--dashboard-export none` in der Aufgabenplanung (Stufe K, Schritt 5) |
+
+## Was danach noch offen ist
+
+Der Upload läuft nach dieser Stufe **von Hand**. Der Exportschritt kennt
+bislang nur `target: none | directory`. Sobald diese Stufe abgenommen ist,
+folgt die Umsetzung des Datenwegs (Entscheidung **E4**: `wrangler` als
+Unterprozess oder HTTP aus Python) samt Aufräumen alter Deployments und der
+Schaltung im Tageslauf (Stufe K, Schritt 5).
+
 # Laufender Betrieb
 
 ## Betriebszustand
