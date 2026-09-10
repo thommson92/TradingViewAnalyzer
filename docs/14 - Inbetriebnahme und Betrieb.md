@@ -1321,11 +1321,46 @@ Access braucht eine Stelle, die die Anmeldung durchführt. Eingebaut ist
 das ausdrücklich nur als Rückfall, weil damit das E-Mail-Postfach der
 einzige Faktor ist.
 
-**Vorschlag: GitHub als Identitätsanbieter.** Das Konto existiert bereits
-(dasselbe, in dem dieses Repository liegt), es kann Passkeys und
-Authenticator-App, und es entsteht keine neue Identität, die gepflegt
-werden muss. In Zero Trust unter *Settings → Authentication → Login
-methods → Add new → GitHub*.
+**Gewählt: GitHub als Identitätsanbieter** (Entscheidung des Inhabers vom
+2026-09-10, damit ist O3 beschieden). Das Konto existiert bereits — dasselbe,
+in dem dieses Repository liegt —, es kann Passkeys und Authenticator-App,
+und es entsteht keine neue Identität, die gepflegt werden muss.
+
+Die Einrichtung hat zwei Hälften: eine OAuth-Anwendung bei GitHub, und der
+Eintrag davon in Zero Trust. **Der Teamname aus Schritt 1 muss dafür
+feststehen** — er steckt in der Rückruf-Adresse.
+
+**Bei GitHub** unter *Settings → Developer settings → OAuth Apps → New OAuth
+App*:
+
+| Feld | Wert |
+|---|---|
+| Application name | Was bei der Anmeldung angezeigt wird. Nichtssagend halten (T9) |
+| Homepage URL | `https://<team>.cloudflareaccess.com` |
+| Authorization callback URL | `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback` |
+
+Registrieren, die **Client ID** notieren, dann ein **Client secret**
+erzeugen. Beides in den Passwortmanager — das Secret erscheint nur einmal.
+
+**In Zero Trust** unter *Settings → Authentication → Login methods → Add new
+→ GitHub*: die Client ID in das Feld **App ID**, das Secret in **Client
+secret**, speichern, dann **Finish setup** — dort erteilt GitHub den Zugriff
+auf Organisationen und E-Mail-Adressen.
+
+### Die Prüfung, und warum sie vor der Zugriffsregel kommt
+
+Neben der angelegten Anmeldemethode steht **Test**. Diesen Knopf drücken
+und die zurückgegebene Identität ansehen.
+
+**Der Grund ist eine Falle, die sonst erst beim Aussperren auffällt:** Die
+Zugriffsregel in Schritt 4 lässt genau **eine E-Mail-Adresse** zu. Welche
+Adresse GitHub zurückgibt, hängt aber von den Einstellungen des Kontos ab —
+wer *Keep my email addresses private* gesetzt hat, wird unter Umständen mit
+einer `users.noreply.github.com`-Adresse geführt. Steht in der Regel dann
+die private Adresse, meldet Access folgerichtig ab, und zwar jedes Mal.
+
+Deshalb: **Die Adresse, die der Test anzeigt, ist die Adresse, die in die
+Regel gehört** — nicht die, die man erwartet hätte.
 
 **Was man dabei wissen sollte:** Damit hängen Repository und Dashboard an
 demselben Konto. Wer es übernimmt, hat beides. Das Repository ist

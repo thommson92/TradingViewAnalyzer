@@ -811,7 +811,7 @@ und einem Weg zurück zum Server, den es hier bewusst nicht gibt (S18).
 |---|---|---|
 | O1 | ~~**Finnhub L8, ADR 0022, IBKR-Bedingungen:** Ist ein Hosting-Anbieter, der Klartext speichert, ein „Dritter"? Und ist ein Anbieter, der nur Chiffrat speichert, keiner?~~ **Beschieden am 2026-09-09** — siehe 10.4 | Stufe 1 gegen Stufe 2; nur der Inhaber kann das beschließen |
 | O2 | Welche Nutzungsbedingungen hat die kostenlose Stufe des gewählten Anbieters (private Nutzung, Datenverarbeitung, Kündigung, Speicherort)? Lassen sich alte Deployments löschen, oder behält der Anbieter jede Fassung unter eigener Adresse (T20)? Liegt die Zugriffsregel außerhalb des Deployments (N19)? Gibt es Deploy-Rechte je Projekt (AK9)? | 11.1, 8.3, 8.4 |
-| O3 | Gibt es ein Konto bei einem Identitätsanbieter mit Authenticator-App oder Passkey, das der Inhaber für die Kantenanmeldung nutzen will? | 8.3, T2 |
+| O3 | ~~Gibt es ein Konto bei einem Identitätsanbieter mit Authenticator-App oder Passkey, das der Inhaber für die Kantenanmeldung nutzen will?~~ **Beschieden am 2026-09-10: GitHub** (Doc 14, Stufe L, Schritt 2) | 8.3, T2 |
 | O4 | Steht Node auf dem Server (A4)? Ist ein Anbieter-Werkzeug als Unterprozess akzeptabel (D3)? | DW1 gegen DW2 |
 | O5 | Wie groß ist der echte Export (Berichte, Backtests)? | A1; der PoC misst |
 | O6 | Welche Browser sollen unterstützt werden (`DecompressionStream`, WebCrypto)? | Stufe 2 |
